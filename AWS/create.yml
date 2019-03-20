@@ -29,6 +29,7 @@
         key_name: '{{ keypair_name }}'
         image: '{{ item.image }}'
         instance_type: '{{ item.instance_type }}'
+        instance_profile_name: '{{ item.profile_name | default(omit) }}'
         vpc_subnet_id: '{{ item.vpc_subnet_id }}'
         group: '{{ item.aws_sec_group | default(item.security_group_name) }}'
         instance_tags:

@@ -31,6 +31,7 @@
         vpc_subnet_id: '{{ item.vpc_subnet_id }}'
         spot_price: '{{ item.spot_price }}'
         spot_wait_timeout: '{{ item.wait_timeout | default(600) }}'
+        instance_initiated_shutdown_behavior: '{{ item.shutdown_behavior | default("terminate") }}'
         user_data: "{{ ec2_user_data }}"
         exact_count: 1
         count_tag:

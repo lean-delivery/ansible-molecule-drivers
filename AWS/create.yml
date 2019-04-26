@@ -38,6 +38,7 @@
           ssh_user: '{{ item.ssh_user }}'
         spot_price: '{{ item.spot_price | default(omit) }}'
         spot_wait_timeout: '{{ item.wait_timeout | default(600) }}'
+        instance_initiated_shutdown_behavior: '{{ item.shutdown_behavior | default("terminate") }}'
         wait: True
         wait_timeout: '{{ item.wait_timeout | default(600) }}'
         assign_public_ip: '{{ item.assign_public_ip | default(True) }}'

@@ -54,7 +54,8 @@
       set_fact:
         instance_conf_dict: {
           instance: '{{ item.instances[0].tags.instance }}',
-          address: '{{ item.instances[0].public_ip | default(item.instances[0].private_ip, True) }}',
+          address: '{{ item.instances[0].private_ip }}',
+          public_ip: '{{ item.instances[0].public_ip | default("") }}',
           user: '{{ ansible_user }}',
           port: '{{ winrm_port }}' }
       loop: '{{ instance_create.results }}'

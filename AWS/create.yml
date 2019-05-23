@@ -2,7 +2,7 @@
 - name: Create
   hosts: localhost
   connection: local
-  gather_facts: False
+  gather_facts: false
   no_log: "{{ not ((lookup('env', 'MOLECULE_DEBUG') | bool) or (molecule_yml.provisioner.log | default(false) | bool)) }}"
   vars:
     ssh_port: 22
@@ -39,9 +39,9 @@
         spot_price: '{{ item.spot_price | default(omit) }}'
         spot_wait_timeout: '{{ item.wait_timeout | default(600) }}'
         instance_initiated_shutdown_behavior: '{{ item.shutdown_behavior | default("terminate") }}'
-        wait: True
+        wait: true
         wait_timeout: '{{ item.wait_timeout | default(600) }}'
-        assign_public_ip: '{{ item.assign_public_ip | default(True) }}'
+        assign_public_ip: '{{ item.assign_public_ip | default(true) }}'
         exact_count: 1
         count_tag:
           instance: '{{ item.name }}'
@@ -58,6 +58,19 @@
       until: instance_create.finished
       delay: 5
       retries: 300
+
+    # This functionality required python modules boto, boto3, botocore
+    - name: Tag volumes
+      ec2_tag:
+        resource: >-
+          {{ item
+          | json_query("instances[0].block_device_mapping.*.volume_id")
+          | first }}
+        tags:
+          Instance: '{{ item.instances[0].tags.instance }}'
+          CreatedTime: '{{ lookup("pipe","date +%Y-%m-%d") }}'
+          ManagedBy: 'Molecule'
+      loop: '{{ instance_create.results }}'
 
     # Mandatory configuration for Molecule to function.
 

@@ -2,15 +2,15 @@
 - name: Create
   hosts: localhost
   connection: local
-  gather_facts: False
+  gather_facts: false
   no_log: "{{ not ((lookup('env', 'MOLECULE_DEBUG') | bool) or (molecule_yml.provisioner.log | default(false) | bool)) }}"
 
   vars:
     molecule_file: "{{ lookup('env', 'MOLECULE_FILE') }}"
     molecule_instance_config: "{{ lookup('env','MOLECULE_INSTANCE_CONFIG') }}"
     molecule_yml: "{{ lookup('file', molecule_file) | from_yaml }}"
-    ansible_user: "{{ lookup('env', 'WINRM_ADMIN_ACC') | default('molecule', True) }}"
-    ansible_password: "{{ lookup('env', 'WINRM_ADMIN_PWD') | default('M0leCule123!', True) }}"
+    ansible_user: "{{ lookup('env', 'WINRM_ADMIN_ACC') | default('molecule', true) }}"
+    ansible_password: "{{ lookup('env', 'WINRM_ADMIN_PWD') | default('M0leCule123!', true) }}"
     ec2_user_data: "{{ lookup('template', './windows') }}"
     winrm_port: 5986
 
@@ -22,8 +22,8 @@
         image: '{{ item.aws_image_id }}'
         instance_type: '{{ item.instance_type }}'
         group: '{{ item.aws_sec_group }}'
-        assign_public_ip: '{{ item.assign_public_ip | default(True) }}'
-        wait: True
+        assign_public_ip: '{{ item.assign_public_ip | default(true) }}'
+        wait: true
         wait_timeout: '{{ item.wait_timeout | default(600) }}'
         instance_tags:
           instance: '{{ item.name }}'
@@ -49,6 +49,18 @@
       until: instance_create.finished
       delay: 20
       retries: 300
+
+    - name: Tag volumes
+      ec2_tag:
+        resource: >-
+          {{ item
+          | json_query("instances[0].block_device_mapping.*.volume_id")
+          | first }}
+        tags:
+          Instance: '{{ item.instances[0].tags.instance }}'
+          CreatedTime: '{{ lookup("pipe","date +%Y-%m-%d") }}'
+          ManagedBy: 'Molecule'
+      loop: '{{ instance_create.results }}'
 
     - name: Populate instance config dict
       set_fact:

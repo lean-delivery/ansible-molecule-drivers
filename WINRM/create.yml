@@ -28,6 +28,8 @@
         instance_tags:
           instance: '{{ item.name }}'
           Name: '{{ item.name }}'
+          CreatedTime: '{{ lookup("pipe","date +%Y-%m-%d") }}'
+          ManagedBy: 'Molecule'
         vpc_subnet_id: '{{ item.vpc_subnet_id }}'
         spot_price: '{{ item.spot_price }}'
         spot_wait_timeout: '{{ item.wait_timeout | default(600) }}'

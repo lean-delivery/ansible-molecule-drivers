@@ -35,6 +35,8 @@
         instance_tags:
           instance: '{{ item.name }}'
           Name: '{{ item.name }}'
+          CreatedTime: '{{ lookup("pipe","date +%Y-%m-%d") }}'
+          ManagedBy: 'Molecule'
           ssh_user: '{{ item.ssh_user }}'
         spot_price: '{{ item.spot_price | default(omit) }}'
         spot_wait_timeout: '{{ item.wait_timeout | default(600) }}'

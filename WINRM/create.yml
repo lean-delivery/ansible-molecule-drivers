@@ -3,7 +3,8 @@
   hosts: localhost
   connection: local
   gather_facts: false
-  no_log: "{{ not ((lookup('env', 'MOLECULE_DEBUG') | bool) or (molecule_yml.provisioner.log | default(false) | bool)) }}"
+  no_log: false
+  #"{{ not ((lookup('env', 'MOLECULE_DEBUG') | bool) or (molecule_yml.provisioner.log | default(false) | bool)) }}"
 
   vars:
     molecule_file: "{{ lookup('env', 'MOLECULE_FILE') }}"
@@ -13,13 +14,51 @@
     ansible_password: "{{ lookup('env', 'WINRM_ADMIN_PWD') | default('M0leCule123!', true) }}"
     ec2_user_data: "{{ lookup('template', './windows') }}"
     winrm_port: 5986
+    aws_platforms:
+      windows2016: Windows_Server-2016-English-Full-Base-*
+      windows2016core: Windows_Server-2016-English-Core-Base-*
+      windows2019: Windows_Server-2019-English-Full-Base-*
+      windows2019core: Windows_Server-2019-English-Core-Base-*
 
   tasks:
+
+    - name: Find latest AMI for server
+      ec2_ami_facts:
+        filters:
+          name: '{{ aws_platforms[item.platform] }}'
+      register: amis
+      when: item.platform in aws_platforms
+      loop: '{{ molecule_yml.platforms | selectattr("platform", "defined") | list }}'
+
+    - name: Set latest AMIs for platforms
+      set_fact:
+        last_ami: >-
+          {{ last_ami | default({})
+            | combine( {item.name:
+              (
+                amis.results
+                  | selectattr("_ansible_item_label.platform", "equalto", item.platform)
+                  | sum(attribute="images", start=[])
+                  | sort(attribute="creation_date")
+                  | map(attribute="image_id")
+                  | list
+                  | last
+              )
+                    } )
+          }}
+      loop: '{{ molecule_yml.platforms | selectattr("platform", "defined") | list }}'
+
+    - name: Set images dict
+      set_fact:
+        ami_images: >-
+          {{ ami_images | default({})
+            | combine( { item.name: (last_ami[item.name] | default(item.aws_image_id)) } ) }}
+      loop: '{{ molecule_yml.platforms }}'
 
     - name: Start Windows instances
       ec2:
         region: '{{ item.aws_region }}'
-        image: '{{ item.aws_image_id }}'
+        image: '{{ ami_images[item.name] }}'
         instance_type: '{{ item.instance_type }}'
         group: '{{ item.aws_sec_group }}'
         assign_public_ip: '{{ item.assign_public_ip | default(true) }}'
@@ -31,7 +70,7 @@
           CreatedTime: '{{ lookup("pipe","date +%Y-%m-%d") }}'
           ManagedBy: 'Molecule'
         vpc_subnet_id: '{{ item.vpc_subnet_id }}'
-        spot_price: '{{ item.spot_price }}'
+        spot_price: '{{ item.spot_price | default(omit) }}'
         spot_wait_timeout: '{{ item.wait_timeout | default(600) }}'
         instance_initiated_shutdown_behavior: '{{ item.shutdown_behavior | default("terminate") }}'
         user_data: "{{ ec2_user_data }}"
@@ -56,8 +95,8 @@
       ec2_tag:
         resource: >-
           {{ item
-          | json_query("instances[0].block_device_mapping.*.volume_id")
-          | first }}
+            | json_query("instances[0].block_device_mapping.*.volume_id")
+            | first }}
         tags:
           Instance: '{{ item.instances[0].tags.instance }}'
           CreatedTime: '{{ lookup("pipe","date +%Y-%m-%d") }}'
@@ -66,19 +105,21 @@
 
     - name: Populate instance config dict
       set_fact:
-        instance_conf_dict: {
-          instance: '{{ item.instances[0].tags.instance }}',
-          address: '{{ item.instances[0].private_ip }}',
-          public_ip: '{{ item.instances[0].public_ip | default("") }}',
-          user: '{{ ansible_user }}',
-          port: '{{ winrm_port }}' }
+        instance_conf_dict:
+          instance: '{{ item.instances[0].tags.instance }}'
+          address: '{{ item.instances[0].private_ip }}'
+          public_ip: '{{ item.instances[0].public_ip | default("") }}'
+          user: '{{ ansible_user }}'
+          port: '{{ winrm_port }}'
       loop: '{{ instance_create.results }}'
       register: instance_config_dict
       when: instance_create.changed | bool
 
     - name: Convert instance config dict to a list
       set_fact:
-        instance_conf: "{{ instance_config_dict.results | map(attribute='ansible_facts.instance_conf_dict') | list }}"
+        instance_conf: >-
+          {{ instance_config_dict.results
+            | map(attribute='ansible_facts.instance_conf_dict') | list }}
         when: instance_create.changed | bool
 
     - name: Dump instance config
@@ -91,6 +132,6 @@
       wait_for:
         port: '{{ winrm_port }}'
         host: '{{ item.address }}'
-        delay: 2
+        connect_timeout: 2
         timeout: 320
       loop: "{{ lookup('file', molecule_instance_config) | molecule_from_yaml }}"

@@ -3,8 +3,7 @@
   hosts: localhost
   connection: local
   gather_facts: false
-  no_log: false
-  #"{{ not ((lookup('env', 'MOLECULE_DEBUG') | bool) or (molecule_yml.provisioner.log | default(false) | bool)) }}"
+  no_log: "{{ not ((lookup('env', 'MOLECULE_DEBUG') | bool) or (molecule_yml.provisioner.log | default(false) | bool)) }}"
 
   vars:
     molecule_file: "{{ lookup('env', 'MOLECULE_FILE') }}"
@@ -52,7 +51,7 @@
       set_fact:
         ami_images: >-
           {{ ami_images | default({})
-            | combine( { item.name: (last_ami[item.name] | default(item.aws_image_id)) } ) }}
+            | combine( { item.name: ((last_ami|default({}))[item.name] | default(item.aws_image_id)) } ) }}
       loop: '{{ molecule_yml.platforms }}'
 
     - name: Start Windows instances

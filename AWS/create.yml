@@ -49,7 +49,7 @@
       set_fact:
         ami_images: >-
           {{ ami_images | default({})
-            | combine( { item.name: (last_ami[item.name] | default(item.image)) } ) }}
+            | combine( { item.name: ((last_ami|default({}))[item.name] | default(item.image)) } ) }}
       loop: '{{ molecule_yml.platforms }}'
 
     - name: Create keypair
@@ -106,8 +106,8 @@
       ec2_tag:
         resource: >-
           {{ item
-          | json_query("instances[0].block_device_mapping.*.volume_id")
-          | first }}
+            | json_query("instances[0].block_device_mapping.*.volume_id")
+            | first }}
         tags:
           Instance: '{{ item.instances[0].tags.instance }}'
           CreatedTime: '{{ lookup("pipe","date +%Y-%m-%d") }}'

@@ -10,29 +10,27 @@ before_script:
 variables:
   GET_SOURCES_ATTEMPTS: "5"
 
-AWS Linux role from cookiecutter test:
+AWS role from cookiecutter Linux test:
   variables:
     AWS_REGION: us-east-1
   stage: deployment test
   script:
     - cookiecutter -f --no-input https://github.com/lean-delivery/ansible-development-kit
-    - find . -type d -regex "./AWS\|./EPC\|./WINRM"
-        -exec cp -R {} ansible-role-default_role/molecule/resources/provisioning/ \;
-    - cp -R AWS ansible-role-default_role/molecule/resources/provisioning/
+    - mkdir -p ansible-role-default_role/molecule/resources/provisioning/
+    - mv AWS ansible-role-default_role/molecule/resources/provisioning/
     - cd ansible-role-default_role
     - molecule test -s cloud-aws-direct
   tags:
     - aws
 
-AWS Windows role from cookiecutter test:
+AWS role from cookiecutter AWS driver Windows test:
   variables:
     AWS_REGION: us-east-1
   stage: deployment test
   script:
     - cookiecutter -f --no-input https://github.com/lean-delivery/ansible-development-kit
-    - find . -type d -regex "./AWS\|./EPC\|./WINRM"
-        -exec cp -R {} ansible-role-default_role/molecule/resources/provisioning/ \;
-    - cp -R WINRM ansible-role-default_role/molecule/resources/provisioning/
+    - mkdir -p ansible-role-default_role/molecule/resources/provisioning/
+    - mv AWS ansible-role-default_role/molecule/resources/provisioning/WINRM
     - cd ansible-role-default_role
     - molecule test -s cloud-aws-windows
   tags:
@@ -44,9 +42,8 @@ EPC role from cookiecutter test:
   stage: deployment test
   script:
     - cookiecutter -f --no-input https://github.com/lean-delivery/ansible-development-kit
-    - find . -type d -regex "./AWS\|./EPC\|./WINRM"
-        -exec cp -R {} ansible-role-default_role/molecule/resources/provisioning/ \;
-    - cp -R EPC ansible-role-default_role/molecule/resources/provisioning/
+    - mkdir -p ansible-role-default_role/molecule/resources/provisioning/
+    - mv EPC ansible-role-default_role/molecule/resources/provisioning/  
     - cd ansible-role-default_role
     - molecule test -s cloud-epc-delegated
   tags:

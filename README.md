@@ -15,7 +15,7 @@ Currently the list of included drivers is the following:
 
 AWS driver playbooks are set to be used in AWS environment for molecule tests executed by gitlab-runner. 
 
-They support only scenarios for Linux instances accessed through SSH. 
+They support scenarios for both Linux and Windows instances accessed through SSH or WinRM. 
 
 Gitlab-runner with tag `aws` required to run these tests.
 

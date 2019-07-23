@@ -10,21 +10,33 @@
       {{ lookup('env','MOLECULE_PROJECT_DIRECTORY').split('/')[-1] }}_\
       {{ lookup('env','MOLECULE_SCENARIO_NAME') }}"
     keypair_path: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/ssh_key"
+
+    ansible_user: "{{ lookup('env', 'WINRM_ADMIN_ACC') | default('molecule', true) }}"
+    ansible_password: "{{ lookup('env', 'WINRM_ADMIN_PWD') | default('M0leCule123!', true) }}"
+    ec2_user_data: "{{ lookup('template', './windows') }}"
+    winrm_port: 5986
+
     aws_platforms:
-      centos7: CentOS Linux 7 x86_64 HVM EBS ENA*
-      centos6: CentOS Linux 6 x86_64 HVM EBS ENA*
-      ubuntu16: ubuntu/images/hvm-ssd/ubuntu-xenial-16.04-amd64-server*
-      ubuntu18: ubuntu/images/hvm-ssd/ubuntu-bionic-18.04-amd64-server*
-      debian9: debian-stretch-hvm-x86_64*
+      linux:
+        centos7: CentOS Linux 7 x86_64 HVM EBS ENA*
+        centos6: CentOS Linux 6 x86_64 HVM EBS ENA*
+        ubuntu16: ubuntu/images/hvm-ssd/ubuntu-xenial-16.04-amd64-server*
+        ubuntu18: ubuntu/images/hvm-ssd/ubuntu-bionic-18.04-amd64-server*
+        debian9: debian-stretch-hvm-x86_64*
+      windows:
+        windows2016: Windows_Server-2016-English-Full-Base-*
+        windows2016core: Windows_Server-2016-English-Core-Base-*
+        windows2019: Windows_Server-2019-English-Full-Base-*
+        windows2019core: Windows_Server-2019-English-Core-Base-*
 
   tasks:
 
     - name: Find latest AMI for server
       ec2_ami_facts:
         filters:
-          name: '{{ aws_platforms[item.platform] }}'
+          name: '{{ (aws_platforms.linux | combine(aws_platforms.windows))[item.platform] }}'
       register: amis
-      when: item.platform in aws_platforms
+      when: item.platform in aws_platforms.linux | combine(aws_platforms.windows)
       loop: '{{ molecule_yml.platforms | selectattr("platform", "defined") | list }}'
 
     - name: Set latest AMIs for platforms
@@ -66,6 +78,7 @@
 
     - name: Create molecule instance(s)
       ec2:
+        region: '{{ item.region | default(item.aws_region) }}'
         key_name: '{{ keypair_name }}'
         image: '{{ ami_images[item.name] }}'
         instance_type: '{{ item.instance_type }}'
@@ -77,10 +90,14 @@
           Name: '{{ item.name }}'
           CreatedTime: '{{ lookup("pipe","date +%Y-%m-%d") }}'
           ManagedBy: 'Molecule'
-          ssh_user: '{{ item.ssh_user }}'
+          ssh_user: '{{ item.ssh_user | default(omit) }}'
         spot_price: '{{ item.spot_price | default(omit) }}'
         spot_wait_timeout: '{{ item.wait_timeout | default(600) }}'
         instance_initiated_shutdown_behavior: '{{ item.shutdown_behavior | default("terminate") }}'
+        user_data: >-
+            {{ ((item.platform | default(omit) in aws_platforms.windows) or
+                ('windows' in item.groups))
+                | ternary(ec2_user_data, omit) }}
         wait: true
         wait_timeout: '{{ item.wait_timeout | default(600) }}'
         assign_public_ip: '{{ item.assign_public_ip | default(true) }}'
@@ -98,7 +115,7 @@
       loop: '{{ server.results }}'
       register: instance_create
       until: instance_create.finished
-      delay: 5
+      delay: 20
       retries: 300
 
     # This functionality required python modules boto, boto3, botocore
@@ -114,18 +131,23 @@
           ManagedBy: 'Molecule'
       loop: '{{ instance_create.results }}'
 
-    # Mandatory configuration for Molecule to function.
-
     - name: Populate instance config dict
       set_fact:
         instance_conf_dict:
           instance: '{{ item.instances[0].tags.instance }}'
           address: '{{ item.instances[0].private_ip }}'
           public_ip: '{{ item.instances[0].public_ip | default("") }}'
-          user: '{{ item.instances[0].tags.ssh_user }}'
-          port: '{{ ssh_port }}'
+          user: '{{ item.instances[0].tags.ssh_user | default(ansible_user) }}'
+          port: >-
+            {{ ((item.item.item.platform | default(omit) in aws_platforms.windows) or
+                ('windows' in item.item.item.groups))
+                | ternary(winrm_port, ssh_port) }}
           identity_file: '{{ keypair_path }}'
           instance_ids: '{{ item.instance_ids }}'
+          connection: >-
+            {{ ((item.item.item.platform | default(omit) in aws_platforms.windows) or
+                ('windows' in item.item.item.groups))
+                | ternary('winrm', 'ssh') }}
       loop: '{{ instance_create.results }}'
       register: instance_config_dict
       when: instance_create.changed | bool
@@ -143,10 +165,11 @@
         dest: '{{ molecule_instance_config }}'
       when: instance_create.changed | bool
 
-    - name: Wait for SSH
+    - name: Wait for connection
       wait_for:
-        port: '{{ ssh_port }}'
+        port: '{{ item.port }}'
         host: '{{ item.address }}'
         delay: 2
+        connect_timeout: 2
         timeout: 320
       loop: "{{ lookup('file', molecule_instance_config) | molecule_from_yaml }}"

@@ -43,7 +43,7 @@ EPC role from cookiecutter test:
   script:
     - cookiecutter -f --no-input https://github.com/lean-delivery/ansible-development-kit
     - mkdir -p ansible-role-default_role/molecule/resources/provisioning/
-    - mv EPC ansible-role-default_role/molecule/resources/provisioning/  
+    - mv EPC ansible-role-default_role/molecule/resources/provisioning/
     - cd ansible-role-default_role
     - molecule test -s cloud-epc-delegated
   tags:

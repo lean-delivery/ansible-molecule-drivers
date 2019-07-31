@@ -43,10 +43,10 @@
       set_fact:
         last_ami: >-
           {{ last_ami | default({})
-            | combine( {item.name:
+            | combine( {molecule_platform.name:
               (
                 amis.results
-                  | selectattr("_ansible_item_label.platform", "equalto", item.platform)
+                  | selectattr("item.platform", "equalto", molecule_platform.platform)
                   | sum(attribute="images", start=[])
                   | sort(attribute="creation_date")
                   | map(attribute="image_id")
@@ -56,6 +56,8 @@
                     } )
           }}
       loop: '{{ molecule_yml.platforms | selectattr("platform", "defined") | list }}'
+      loop_control:
+        loop_var: molecule_platform
 
     - name: Set images dict
       set_fact:

@@ -19,7 +19,7 @@ They support scenarios for both Linux and Windows instances accessed through SSH
 
 Gitlab-runner with tag `aws` required to run these tests.
 
-## WINRM
+## WINRM (Deprecated)
 
 WINRM driver playbooks are set to be used in AWS environment for the same purpose as above for Windows instances.
 

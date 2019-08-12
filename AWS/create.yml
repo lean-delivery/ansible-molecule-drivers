@@ -23,6 +23,8 @@
         ubuntu16: ubuntu/images/hvm-ssd/ubuntu-xenial-16.04-amd64-server*
         ubuntu18: ubuntu/images/hvm-ssd/ubuntu-bionic-18.04-amd64-server*
         debian9: debian-stretch-hvm-x86_64*
+        amazon: amzn-ami-hvm-*
+        amazon2: amzn2-ami-hvm-*
       windows:
         windows2016: Windows_Server-2016-English-Full-Base-*
         windows2016core: Windows_Server-2016-English-Core-Base-*

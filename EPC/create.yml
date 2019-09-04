@@ -7,7 +7,6 @@
   vars:
     ssh_port: 22
   tasks:
-    # Developer must implement.
     - name: Create molecule instance(s)
       epc_vm:
         description: "{{ item.name | default('auto_molecule_epc_instance') }}"
@@ -36,11 +35,6 @@
       delay: 20
       with_items: "{{ server.results }}"
 
-    # Mandatory configuration for Molecule to function.
-
-    # Developer must map instance config.
-    # Mandatory configuration for Molecule to function.
-
     - name: Populate instance config dict
       set_fact:
         instance_conf_dict:
@@ -58,8 +52,8 @@
           owner: "{{ item.owner }}"
           processed_by_autoconfiguration: "{{ item.processedByAutoConfiguration }}"
           project: "{{ item.project }}"
-          scan_counter: "{{ item.scanCounter }}"
-          scan_counter_within_period: "{{ item.scanCounterWithinPeriod }}"
+          scan_counter: "{{ item.nessusScanCounter }}"
+          scan_counter_within_period: "{{ item.nessusScanCounterWithinPeriod }}"
           shape: "{{ item.shape }}"
           ssh_keyset: "{{ item.sshKeySet }}"
           state: "{{ item.state }}"

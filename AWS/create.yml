@@ -2,13 +2,14 @@
 - name: Create
   hosts: localhost
   connection: local
-  gather_facts: false
+  gather_facts: true
   no_log: "{{ not ((lookup('env', 'MOLECULE_DEBUG') | bool) or (molecule_yml.provisioner.log | default(false) | bool)) }}"
   vars:
     ssh_port: 22
+    ci_branch_name: "{{ lookup('env', 'CI_COMMIT_REF_NAME' ) }}"
     keypair_name: "molecule-key_\
       {{ lookup('env','MOLECULE_PROJECT_DIRECTORY').split('/')[-1] }}_\
-      {{ lookup('env','MOLECULE_SCENARIO_NAME') }}"
+      {{ lookup('env','MOLECULE_SCENARIO_NAME') }}-{{ lookup('env', 'CI_COMMIT_REF_NAME' ) }}"
     keypair_path: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/ssh_key"
 
     ansible_user: "{{ lookup('env', 'WINRM_ADMIN_ACC') | default('molecule', true) }}"
@@ -32,6 +33,10 @@
         windows2019core: Windows_Server-2019-English-Core-Base-*
 
   tasks:
+
+    - name: debug CI_COMMIT_REF_NAME
+      debug:
+        var: ci_branch_name
 
     - name: Find latest AMI for server
       ec2_ami_facts:
@@ -91,7 +96,7 @@
         group: '{{ item.aws_sec_group | default(item.security_group_name) }}'
         instance_tags:
           instance: '{{ item.name }}'
-          Name: '{{ item.name }}'
+          Name: '{{ item.name }}-{{ ci_branch_name }}'
           CreatedTime: '{{ lookup("pipe","date +%Y-%m-%d") }}'
           ManagedBy: 'Molecule'
           ssh_user: '{{ item.ssh_user | default(omit) }}'
@@ -107,7 +112,7 @@
         assign_public_ip: '{{ item.assign_public_ip | default(true) }}'
         exact_count: 1
         count_tag:
-          instance: '{{ item.name }}'
+          Name: '{{ item.name }}-{{ ci_branch_name }}'
       register: server
       loop: '{{ molecule_yml.platforms }}'
       async: 7200
@@ -122,18 +127,29 @@
       delay: 20
       retries: 300
 
+    - name: Create combined list of volumes
+      set_fact:
+        instance_volumes_list: >-
+          {{ instance_volumes_list | default([])
+            + (item.block_device_mapping.values()
+                | map('combine', {'tag': item.tags.Name})
+                | list) }}
+      loop: >-
+          {{ instance_create.results
+            | map(attribute='instances')
+            | map('first')
+            | list }}
+
     # This functionality required python modules boto, boto3, botocore
     - name: Tag volumes
       ec2_tag:
-        resource: >-
-          {{ item
-            | json_query("instances[0].block_device_mapping.*.volume_id")
-            | first }}
+        resource: '{{ item.volume_id }}'
         tags:
-          Instance: '{{ item.instances[0].tags.instance }}'
-          CreatedTime: '{{ lookup("pipe","date +%Y-%m-%d") }}'
+          Name: '{{ item.tag }}'
+          Instance: '{{ item.tag }}'
+          CreatedTime: '{{ ansible_date_time.iso8601_basic }}'
           ManagedBy: 'Molecule'
-      loop: '{{ instance_create.results }}'
+      loop: '{{ instance_volumes_list }}'
 
     - name: Populate instance config dict
       set_fact:

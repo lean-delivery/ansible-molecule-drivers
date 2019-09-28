@@ -7,7 +7,8 @@
   vars:
     keypair_name: "molecule-key_\
       {{ lookup('env','MOLECULE_PROJECT_DIRECTORY').split('/')[-1] }}_\
-      {{ lookup('env','MOLECULE_SCENARIO_NAME') }}"
+      {{ lookup('env','MOLECULE_SCENARIO_NAME') }}-{{ lookup('env', 'CI_COMMIT_REF_NAME' ) }}"
+    ci_branch_name: "{{ lookup('env', 'CI_COMMIT_REF_NAME' ) }}"
   tasks:
 
     - name: Delete remote keypair
@@ -18,7 +19,7 @@
     - name: Get instances list
       ec2_instance_facts:
         filters:
-          "tag:instance": "{{ molecule_yml.platforms | map(attribute='name') | list }}"
+          "tag:Name": "{{ molecule_yml.platforms | map(attribute='name') | list | product([ci_branch_name]) | map('join', '-') | list }}"
         region: us-east-1
       register: ec2_sets
 

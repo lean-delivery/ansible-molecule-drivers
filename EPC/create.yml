@@ -6,10 +6,11 @@
   no_log: "{{ not (lookup('env', 'MOLECULE_DEBUG') | bool or molecule_yml.provisioner.log|default(false) | bool) }}"
   vars:
     ssh_port: 22
+    ci_branch_name: "{{ lookup('env', 'CI_COMMIT_REF_NAME' ) }}"
   tasks:
     - name: Create molecule instance(s)
       epc_vm:
-        description: "{{ item.name | default('auto_molecule_epc_instance') }}"
+        description: "{{ item.name | default('auto_molecule_epc_instance') }}-{{ ci_branch_name }}"
         access_id: "{{ item.access_id | default(omit) }}"
         token: "{{ item.token | default(omit) }}"
         region: "{{ item.region | default(omit) }}"
@@ -38,7 +39,7 @@
     - name: Populate instance config dict
       set_fact:
         instance_conf_dict:
-          instance: "{{ item.description }}"
+          instance: "{{ item.description | replace('-' ~ ci_branch_name, '') }}"
           address: "{{ item.instances.ansible_host }}"
           user: "{{ item.instances.ansible_user }}"
           port: "{{ ssh_port }}"

@@ -1,0 +1,284 @@
+---
+- name: Create
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  no_log: "{{ not ((lookup('env', 'MOLECULE_DEBUG') | bool) or (molecule_yml.provisioner.log | default(false) | bool)) }}"
+  vars:
+    ssh_port: 22
+    ci_branch_name: "{{ lookup('env', 'CI_COMMIT_REF_NAME') }}"
+    keypair_name: "molecule-key_\
+      {{ lookup('env','MOLECULE_PROJECT_DIRECTORY').split('/')[-1] }}_\
+      {{ lookup('env','MOLECULE_SCENARIO_NAME') }}"
+    keypair_path: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/ssh_key"
+
+    # For Windows VMs
+    winrm_script: "https://raw.githubusercontent.com/ansible/ansible/devel/examples/scripts/ConfigureRemotingForAnsible.ps1"
+    winrm_script_name: "ConfigureRemotingForAnsible.ps1"
+    winrm_port: 5986
+
+    # Azure Vm images details
+    vm_admin_username: "{{ lookup('env', 'WINRM_ADMIN_ACC') | default('vm-admin', true) }}"
+    vm_admin_password: "{{ lookup('env', 'WINRM_ADMIN_PWD') | default('M0leCule123!', true) }}"
+
+    azure_images:
+      linux:
+        centos7:
+          publisher: OpenLogic
+          offer: CentOS
+          sku: '7.5' # hardcoded! Currently can't find latest minor version using azure_rm_virtualmachineimage_facts module
+          version: latest
+        centos6:
+          publisher: OpenLogic
+          offer: CentOS
+          sku: '6.10' # hardcoded! Currently can't find latest minor version using azure_rm_virtualmachineimage_facts module
+          version: latest
+        ubuntu16:
+          publisher: Canonical
+          offer: UbuntuServer
+          sku: "16.04-LTS"
+          version: latest
+        ubuntu18:
+          publisher: Canonical
+          offer: UbuntuServer
+          sku: "18.04-LTS"
+          version: latest
+        debian9:
+          publisher: credativ
+          offer: Debian
+          sku: '9'
+          version: latest
+      windows:
+        windows2016core:
+          publisher: MicrosoftWindowsServer
+          offer: WindowsServer
+          sku: "2016-Datacenter-Server-Core-smalldisk"
+          version: latest
+        windows2019core:
+          publisher: MicrosoftWindowsServer
+          offer: WindowsServer
+          sku: "2019-Datacenter-Core-smalldisk"
+          version: latest
+
+  tasks:
+    - name: debug CI_COMMIT_REF_NAME
+      debug:
+        var: ci_branch_name
+
+    - name: Generate keypair
+      openssh_keypair:
+        # todo: must be protected!!!
+        path: /tmp/id_ssh_rsa
+        force: true
+      register: keypair
+
+    - name: Persist the keypair
+      copy:
+        dest: "{{ keypair_path }}"
+        src: "{{ keypair.filename }}"
+        mode: 0600
+      when: keypair.changed | bool
+
+    # During further VMs creation, we have to pass ssh_public_keys param for Linux VMs
+    - name: Set ssh_public_keys list of dicts for Linux VMs
+      set_fact:
+        ssh_public_keys:
+          - path: "/home/{{ vm_admin_username }}/.ssh/authorized_keys"
+            key_data: "{{ keypair.public_key }}"
+
+    # Get unique idempotent name for VM, in Azure VM name == ID
+    # for Windows VM name cannot be longer than 15 characters
+    # VM name sample "tst-c03a89e9-vm"
+    - name: Set unique VM name dicts
+      set_fact:
+        unique_vm_name: >-
+          {{ unique_vm_name | default({})
+            | combine({ item.name: 'tst-' + ((item.name + '-' + ci_branch_name) | to_uuid)[:8] }) }}
+      loop: "{{ molecule_yml.platforms }}"
+
+    # NICs must be created before VMs because of limitations applied by EPAM
+    # During VM creation, Azure tries to create NIC with new network security group, but we can't create NSGs, don't have such permissions
+    # Therefore, we have to create NIC first, attach default EPAM NSG to NIC, then add an existing NIC to new VM
+    - name: Create Azure network interface
+      azure_rm_networkinterface:
+        name: "{{ unique_vm_name[item.name] }}-nic"
+        resource_group: "{{ item.az_resource_group_name }}"
+        virtual_network: "{{ item.az_virtual_network_name }}"
+        subnet_name: "{{ item.az_subnet_name }}"
+        location: "{{ item.az_location }}"
+        create_with_security_group: false
+        security_group: "{{ item.az_network_security_group }}"
+        ip_configurations:
+          - name: ipconfig1
+            primary: true
+            public_ip_address_name: "{{ unique_vm_name[item.name] }}-ip"
+        tags:
+          Instance: "{{ item.name }}"
+          CI_job: "{{ item.name }}-{{ ci_branch_name }}"
+          Name: "{{ unique_vm_name[item.name] }}"
+          Created_time: "{{ lookup('pipe','date +%Y-%m-%d') }}"
+          Managed_by: "Molecule"
+      register: nics
+      loop: "{{ molecule_yml.platforms }}"
+      async: 7200
+      poll: 0
+
+    - name: Wait for NICs creation to complete
+      async_status:
+        jid: "{{ item.ansible_job_id }}"
+      loop: "{{ nics.results }}"
+      register: nic_create
+      until: nic_create.finished
+      delay: 10
+      retries: 300
+
+    - name: Add tags to public IP address
+      azure_rm_publicipaddress:
+        name: "{{ item.state.ip_configurations[0].public_ip_address.name }}"
+        resource_group: "{{ item.item.item.az_resource_group_name }}"
+        tags:
+          Instance: "{{ item.item.item.name }}"
+          CI_job: "{{ item.item.item.name }}-{{ ci_branch_name }}"
+          Name: "{{ unique_vm_name[item.item.item.name] }}"
+          Created_time: "{{ lookup('pipe','date +%Y-%m-%d') }}"
+          Managed_by: "Molecule"
+      loop: "{{ nic_create.results }}"
+      register: ip_tags
+      async: 7200
+      poll: 0
+
+    - name: Wait for tags adding to complete
+      async_status:
+        jid: "{{ item.ansible_job_id }}"
+      loop: "{{ ip_tags.results }}"
+      register: ip_tag_create
+      until: ip_tag_create.finished
+      delay: 10
+      retries: 300
+
+    - name: Set platform-nic dictionary
+      set_fact:
+        # get fun with async :)
+        platform_nic: >-
+          {{ platform_nic | default({})
+            | combine({ item.item.item.name: item.state.name}) }}
+      loop: "{{ nic_create.results }}"
+
+    - name: Create molecule instance(s)
+      azure_rm_virtualmachine:
+        resource_group: "{{ item.az_resource_group_name }}"
+        virtual_network_name: "{{ item.az_virtual_network_name }}"
+        subnet_name: "{{ item.az_subnet_name }}"
+        location: "{{ item.az_location }}"
+        name: "{{ unique_vm_name[item.name] }}-vm"
+        vm_size: "{{ item.vm_size }}"
+        public_ip_allocation_method: Dynamic
+        managed_disk_type: Standard_LRS # Standard HDD, cheap :)
+        os_disk_name: "{{ unique_vm_name[item.name] }}-dsk"
+        os_type: "{{ ('windows' in item.groups) | ternary('Windows', 'Linux') }}"
+        admin_username: "{{ vm_admin_username }}"
+        admin_password: "{{ ('windows' in item.groups) | ternary(vm_admin_password, omit) }}"
+        ssh_password_enabled: "{{ ('windows' in item.groups) | ternary(omit, false) }}"
+        network_interface_names: "{{ platform_nic[item.name] }}"
+        ssh_public_keys: "{{ ('windows' in item.groups) | ternary(omit, ssh_public_keys) }}" # we have to pass param for Linux VMs only
+        image:
+          offer: "{{ (('windows' in item.groups) | ternary(azure_images.windows, azure_images.linux))[item.platform]['offer'] }}"
+          publisher: "{{ (('windows' in item.groups) | ternary(azure_images.windows, azure_images.linux))[item.platform]['publisher'] }}"
+          sku: "{{ (('windows' in item.groups) | ternary(azure_images.windows, azure_images.linux))[item.platform]['sku'] }}"
+          version: "{{ (('windows' in item.groups) | ternary(azure_images.windows, azure_images.linux))[item.platform]['version'] }}"
+        tags:
+          Instance: "{{ item.name }}"
+          CI_job: "{{ item.name }}-{{ ci_branch_name }}"
+          Name: "{{ unique_vm_name[item.name] }}-vm"
+          Created_time: "{{ lookup('pipe','date +%Y-%m-%d') }}"
+          Managed_by: "Molecule"
+          OS: "{{ (('windows' in item.groups) | ternary('Windows', 'Linux')) }}"
+          admin_user: "{{ vm_admin_username }}"
+      register: servers
+      loop: "{{ molecule_yml.platforms }}"
+      async: 7200
+      poll: 0
+
+    - name: Wait for VMs creation to complete
+      async_status:
+        jid: "{{ item.ansible_job_id }}"
+      loop: "{{ servers.results }}"
+      register: instance_create
+      until: instance_create.finished
+      delay: 20
+      retries: 300
+
+    # For Windows VMs only
+    - name: create Azure VM extension to enable HTTPS WinRM listener
+      azure_rm_virtualmachineextension:
+        name: winrm-extension
+        location: "{{ item.item.item.az_location }}"
+        resource_group: "{{ item.item.item.az_resource_group_name }}"
+        virtual_machine_name: "{{ item.ansible_facts.azure_vm.name  }}"
+        publisher: Microsoft.Compute
+        virtual_machine_extension_type: CustomScriptExtension
+        type_handler_version: '1.9'
+        settings: >-
+          {'commandToExecute': 'powershell -ExecutionPolicy Unrestricted -File {{ winrm_script_name }} -EnableCredSSP',
+            'fileUris': ['{{ winrm_script }}']}
+        auto_upgrade_minor_version: true
+      loop: "{{ instance_create.results }}"
+      when:
+        - (instance_create.changed | bool)
+        - ('windows' in item.item.item.groups)
+      register: azure_vm_extensions
+      async: 7200
+      poll: 0
+
+    - name: Wait for VM extensions creation to complete
+      async_status:
+        jid: "{{ item.ansible_job_id }}"
+      when: item.ansible_job_id is defined
+      loop: "{{ azure_vm_extensions.results }}"
+      register: azure_vm_extension_create
+      until: azure_vm_extension_create.finished
+      delay: 20
+      retries: 300
+
+    # Mandatory configuration for Molecule to function.
+
+    - name: Populate instance config dict
+      set_fact:
+        instance_conf_dict:
+          instance: "{{ item.ansible_facts.azure_vm.tags['Instance'] }}"
+          address: >-
+            {{ item.ansible_facts.azure_vm.properties.networkProfile.networkInterfaces[0]
+              .properties.ipConfigurations[0].properties.privateIPAddress }}
+          public_ip: >-
+            {{ item.ansible_facts.azure_vm.properties.networkProfile.networkInterfaces[0]
+              .properties.ipConfigurations[0].properties.publicIPAddress.properties.ipAddress }}
+          user: "{{ vm_admin_username }}" # common for all OSes, Azure specific
+          port: "{{ ('windows' in item.item.item.groups) | ternary(winrm_port, ssh_port) }}"
+          identity_file: "{{ keypair_path }}"
+          instance_ids: "{{ item.ansible_facts.azure_vm.id }}"
+          connection: "{{ ('windows' in item.item.item.groups) | ternary('winrm', 'ssh') }}"
+      loop: "{{ instance_create.results }}"
+      register: instance_config_dict
+      when: instance_create.changed | bool
+
+    - name: Convert instance config dict to a list
+      set_fact:
+        instance_conf: >-
+          {{ instance_config_dict.results
+            | map(attribute='ansible_facts.instance_conf_dict') | list }}
+      when: instance_create.changed | bool
+
+    - name: Dump instance config
+      copy:
+        content: "{{ instance_conf | to_json | from_json | molecule_to_yaml | molecule_header }}"
+        dest: "{{ molecule_instance_config }}"
+      when: instance_create.changed | bool
+
+    - name: Wait for connection
+      wait_for:
+        port: "{{ item.port }}"
+        host: "{{ item.address }}"
+        delay: 2
+        connect_timeout: 2
+        timeout: 320
+      loop: "{{ lookup('file', molecule_instance_config) | molecule_from_yaml }}"

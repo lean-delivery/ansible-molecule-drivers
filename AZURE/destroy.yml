@@ -1,0 +1,126 @@
+---
+- name: Destroy
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  no_log: "{{ not ((lookup('env', 'MOLECULE_DEBUG') | bool) or (molecule_yml.provisioner.log | default(false) | bool)) }}"
+  vars:
+    ci_branch_name: "{{ lookup('env', 'CI_COMMIT_REF_NAME') }}"
+    keypair_name: "molecule-key_\
+      {{ lookup('env','MOLECULE_PROJECT_DIRECTORY').split('/')[-1] }}_\
+      {{ lookup('env','MOLECULE_SCENARIO_NAME') }}"
+    az_resource_group_name: epm-ldi # hardcode!!!
+    az_location: northeurope # hardcode!!!
+
+  tasks:
+    # Tag sample "CI_job:test-azure-windows2019-oracle_java-8-s3-local-test/azure-molecule-driver"
+    - name: Get tags
+      set_fact:
+        instance_tags: >-
+          {{ instance_tags | default({})
+            | combine({ item.name: [ 'CI_job:' + item.name + '-' + ci_branch_name ] }) }}
+      loop: "{{ molecule_yml.platforms }}"
+
+    - name: Get list of VMs
+      azure_rm_virtualmachine_facts:
+        resource_group: "{{ az_resource_group_name }}"
+        tags: "{{ instance_tags[item.name]  }}"
+      loop: "{{ molecule_yml.platforms }}"
+      register: vm_sets
+
+    - name: Destroy molecule instance(s)
+      azure_rm_virtualmachine:
+        resource_group: "{{ az_resource_group_name }}"
+        location: "{{ az_location }}"
+        name: "{{ item.vms[0].name }}"
+        state: absent
+        remove_on_absent: all # also remove associated resources
+      register: servers
+      loop: "{{ vm_sets.results }}"
+      when: item.vms | length > 0
+      async: 7200
+      poll: 0
+
+    - name: Wait for instance(s) deletion to complete
+      async_status:
+        jid: "{{ item.ansible_job_id }}"
+      when: item.ansible_job_id is defined
+      loop: "{{ servers.results }}"
+      register: instance_delete
+      until: instance_delete.finished
+      delay: 20
+      retries: 300
+
+    # Additional check for cases when gitlab-ci job fell due to out of memory
+    # NIC and IP address resources can exist without a VM
+    - name: Get list of NICs
+      azure_rm_networkinterface_facts:
+        resource_group: "{{ az_resource_group_name }}"
+        tags: "{{ instance_tags[item.name]  }}"
+      loop: "{{ molecule_yml.platforms }}"
+      register: nic_sets
+
+    - name: Destroy NIC resources
+      azure_rm_networkinterface:
+        resource_group: "{{ az_resource_group_name }}"
+        location: "{{ az_location }}"
+        name: "{{ item.networkinterfaces[0].name }}"
+        state: absent
+      register: nics
+      loop: "{{ nic_sets.results }}"
+      when: item.networkinterfaces | length > 0
+      async: 7200
+      poll: 0
+
+    - name: Wait for NICs deletion to complete
+      async_status:
+        jid: "{{ item.ansible_job_id }}"
+      when: item.ansible_job_id is defined
+      loop: "{{ nics.results }}"
+      register: nic_delete
+      until: nic_delete.finished
+      delay: 10
+      retries: 300
+
+    # Additional check for cases when gitlab-ci job fell due to out of memory
+    # NIC and public IP address resources can exist without a VM
+    - name: Get list of IPs
+      azure_rm_publicipaddress_facts:
+        resource_group: "{{ az_resource_group_name }}"
+        tags: "{{ instance_tags[item.name]  }}"
+      loop: "{{ molecule_yml.platforms }}"
+      register: ip_sets
+
+    - name: Destroy Public IP address resources
+      azure_rm_publicipaddress:
+        resource_group: "{{ az_resource_group_name }}"
+        location: "{{ az_location }}"
+        name: "{{ item.publicipaddresses[0].name }}"
+        state: absent
+      register: ips
+      loop: "{{ ip_sets.results }}"
+      when: item.publicipaddresses | length > 0
+      async: 7200
+      poll: 0
+
+    - name: Wait for Public IP address resource deletion to complete
+      async_status:
+        jid: "{{ item.ansible_job_id }}"
+      when: item.ansible_job_id is defined
+      loop: "{{ nics.results }}"
+      register: ip_delete
+      until: ip_delete.finished
+      delay: 10
+      retries: 300
+
+    # Mandatory configuration for Molecule to function.
+
+    - name: Populate instance config
+      set_fact:
+        instance_conf: {}
+
+    - name: Dump instance config
+      copy:
+        content: '{{ instance_conf | to_json | from_json | molecule_to_yaml | molecule_header }}'
+        dest: '{{ molecule_instance_config }}'
+      when: servers.changed | bool

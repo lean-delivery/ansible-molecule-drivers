@@ -19,6 +19,7 @@
 
     aws_platforms:
       linux:
+        centos8: CentOS Stream Minimal Latest with Updates*
         centos7: CentOS Linux 7 x86_64 HVM EBS ENA*
         centos6: CentOS Linux 6 x86_64 HVM EBS ENA*
         ubuntu16: ubuntu/images/hvm-ssd/ubuntu-xenial-16.04-amd64-server*

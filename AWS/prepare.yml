@@ -5,9 +5,9 @@
   tasks:
 
     - name: Install python for Ansible
-      raw: test -e /usr/bin/python || (apt install -y python-minimal)
+      raw: (test -e /usr/bin/python || test -e /usr/bin/python3) || (apt install -y python-minimal)
       become: true
-      changed_when: false
+      changed_when: "'installed' in update_result.stdout"
       register: update_result
       retries: 10
       delay: 5
@@ -19,9 +19,10 @@
   tasks:
 
     - name: Install python for Ansible
-      raw: test -e /usr/bin/python || (yum install -y python2 python-simplejson)
+      raw: "(test -e /usr/bin/python || test -e /usr/bin/python3) ||\
+        (dnf install -y epel-release && dnf -y update && dnf install -y python3)"
       become: true
-      changed_when: false
+      changed_when: "'Installed' in update_result.stdout"
       register: update_result
       retries: 10
       delay: 5

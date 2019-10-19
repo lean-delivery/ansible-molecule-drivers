@@ -11,33 +11,38 @@
       {{ lookup('env','MOLECULE_SCENARIO_NAME') }}"
     az_resource_group_name: epm-ldi # hardcode!!!
     az_location: northeurope # hardcode!!!
+    az_storage_account_name: "storage11490" # hardcode!!!
+    az_container: "gitlab-ci-tfstate" # hardcode!!!
+    az_container_key: "tfstate-" # hardcode!!!
 
   tasks:
-    # Tag sample "CI_job:test-azure-windows2019-oracle_java-8-s3-local-test/azure-molecule-driver"
+    # Tag sample "Name:test-azure-windows2019-oracle_java-8-s3-local-test/azure-molecule-driver"
     - name: Get tags
       set_fact:
-        instance_tags: >-
-          {{ instance_tags | default({})
-            | combine({ item.name: [ 'CI_job:' + item.name + '-' + ci_branch_name ] }) }}
+        vmss_tags: >-
+          {{ vmss_tags | default({})
+            | combine({ item.name: [ 'Name:' + item.name + '-' + ci_branch_name ] }) }}
       loop: "{{ molecule_yml.platforms }}"
 
-    - name: Get list of VMs
-      azure_rm_virtualmachine_facts:
+    - name: Get list of VMSSs
+      azure_rm_virtualmachinescaleset_facts:
         resource_group: "{{ az_resource_group_name }}"
-        tags: "{{ instance_tags[item.name]  }}"
+        tags: "{{ vmss_tags[item.name]  }}"
       loop: "{{ molecule_yml.platforms }}"
-      register: vm_sets
+      register: vmss_sets
 
     - name: Destroy molecule instance(s)
-      azure_rm_virtualmachine:
+      azure_rm_virtualmachinescaleset:
         resource_group: "{{ az_resource_group_name }}"
         location: "{{ az_location }}"
-        name: "{{ item.vms[0].name }}"
+        name: "{{ item.ansible_facts.azure_vmss[0].name }}"
         state: absent
         remove_on_absent: all # also remove associated resources
       register: servers
-      loop: "{{ vm_sets.results }}"
-      when: item.vms | length > 0
+      loop: "{{ vmss_sets.results }}"
+      loop_control:
+        label: "{{ item.item.name }}"
+      when: item.ansible_facts.azure_vmss | length > 0
       async: 7200
       poll: 0
 
@@ -46,48 +51,52 @@
         jid: "{{ item.ansible_job_id }}"
       when: item.ansible_job_id is defined
       loop: "{{ servers.results }}"
-      register: instance_delete
-      until: instance_delete.finished
+      loop_control:
+        label: "{{ item.item.item.name }}"
+      register: vmss_delete
+      until: vmss_delete.finished
       delay: 20
       retries: 300
 
-    # Additional check for cases when gitlab-ci job fell due to out of memory
-    # NIC and IP address resources can exist without a VM
-    - name: Get list of NICs
-      azure_rm_networkinterface_facts:
+    #  Load balancer resources must be deleted as well
+    - name: Get list of Load balancers
+      azure_rm_loadbalancer_facts:
         resource_group: "{{ az_resource_group_name }}"
-        tags: "{{ instance_tags[item.name]  }}"
+        tags: "{{ vmss_tags[item.name]  }}"
       loop: "{{ molecule_yml.platforms }}"
-      register: nic_sets
+      register: lb_sets
 
-    - name: Destroy NIC resources
-      azure_rm_networkinterface:
+    - name: Destroy Load balancer resources
+      azure_rm_loadbalancer:
         resource_group: "{{ az_resource_group_name }}"
         location: "{{ az_location }}"
-        name: "{{ item.networkinterfaces[0].name }}"
+        name: "{{ item.ansible_facts.azure_loadbalancers[0].name }}"
         state: absent
-      register: nics
-      loop: "{{ nic_sets.results }}"
-      when: item.networkinterfaces | length > 0
+      register: lbs
+      loop: "{{ lb_sets.results }}"
+      loop_control:
+        label: "{{ item.item.name }}"
+      when: item.ansible_facts.azure_loadbalancers | length > 0
       async: 7200
       poll: 0
 
-    - name: Wait for NICs deletion to complete
+    - name: Wait for LBs deletion to complete
       async_status:
         jid: "{{ item.ansible_job_id }}"
       when: item.ansible_job_id is defined
-      loop: "{{ nics.results }}"
-      register: nic_delete
-      until: nic_delete.finished
+      loop: "{{ lbs.results }}"
+      loop_control:
+        label: "{{ item.item.item.name }}"
+      register: lbs_delete
+      until: lbs_delete.finished
       delay: 10
       retries: 300
 
-    # Additional check for cases when gitlab-ci job fell due to out of memory
-    # NIC and public IP address resources can exist without a VM
+    # Public IP address resources must be deleted as well
     - name: Get list of IPs
       azure_rm_publicipaddress_facts:
         resource_group: "{{ az_resource_group_name }}"
-        tags: "{{ instance_tags[item.name]  }}"
+        tags: "{{ vmss_tags[item.name]  }}"
       loop: "{{ molecule_yml.platforms }}"
       register: ip_sets
 
@@ -95,11 +104,13 @@
       azure_rm_publicipaddress:
         resource_group: "{{ az_resource_group_name }}"
         location: "{{ az_location }}"
-        name: "{{ item.publicipaddresses[0].name }}"
+        name: "{{ item.ansible_facts.azure_publicipaddresses[0].name }}"
         state: absent
       register: ips
       loop: "{{ ip_sets.results }}"
-      when: item.publicipaddresses | length > 0
+      loop_control:
+        label: "{{ item.item.name }}"
+      when: item.ansible_facts.azure_publicipaddresses | length > 0
       async: 7200
       poll: 0
 
@@ -107,11 +118,36 @@
       async_status:
         jid: "{{ item.ansible_job_id }}"
       when: item.ansible_job_id is defined
-      loop: "{{ nics.results }}"
+      loop: "{{ ips.results }}"
+      loop_control:
+        label: "{{ item.item.item.name }}"
       register: ip_delete
       until: ip_delete.finished
       delay: 10
       retries: 300
+
+    # Get unique idempotent name for VMSS
+    - name: Get unique VMSS name dicts
+      set_fact:
+        unique_vmss_name: >-
+          {{ unique_vmss_name | default({})
+            | combine({ item.name: 'tst-' + ((item.name + '-' + ci_branch_name) | to_uuid)[:8] }) }}
+      loop: "{{ molecule_yml.platforms }}"
+
+    - name: Delete temporary Terraform directories
+      file:
+        path: "/tmp/tf-{{ unique_vmss_name[item.name] }}/"
+        state: absent
+      loop: "{{ molecule_yml.platforms }}"
+
+    - name: Delete Terraform remote state files
+      azure_rm_storageblob:
+        resource_group: "{{ az_resource_group_name }}"
+        storage_account_name: "{{ az_storage_account_name }}"
+        container: "{{ az_container }}"
+        blob: "{{ az_container_key }}env:{{ unique_vmss_name[item.name] }}"
+        state: absent
+      loop: "{{ molecule_yml.platforms }}"
 
     # Mandatory configuration for Molecule to function.
 

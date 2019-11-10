@@ -3,153 +3,55 @@
   hosts: localhost
   connection: local
   gather_facts: false
-  no_log: "{{ not ((lookup('env', 'MOLECULE_DEBUG') | bool) or (molecule_yml.provisioner.log | default(false) | bool)) }}"
+  no_log: >-
+    {{ not ((lookup('env', 'MOLECULE_DEBUG') | bool) or (molecule_yml.provisioner.log | default(false) | bool)) }}
   vars:
-    ci_branch_name: "{{ lookup('env', 'CI_COMMIT_REF_NAME') }}"
+    ci_branch_name: >-
+      {{ lookup('env', 'CI_COMMIT_REF_NAME') }}
     keypair_name: "molecule-key_\
       {{ lookup('env','MOLECULE_PROJECT_DIRECTORY').split('/')[-1] }}_\
       {{ lookup('env','MOLECULE_SCENARIO_NAME') }}"
     az_resource_group_name: epm-ldi # hardcode!!!
     az_location: northeurope # hardcode!!!
-    az_storage_account_name: "storage11490" # hardcode!!!
-    az_container: "gitlab-ci-tfstate" # hardcode!!!
-    az_container_key: "tfstate-" # hardcode!!!
 
   tasks:
-    # Tag sample "Name:test-azure-windows2019-oracle_java-8-s3-local-test/azure-molecule-driver"
+    # Tag sample 'Name:test-azure-windows2019-oracle_java-8-s3-local-test/azure-molecule-driver'
     - name: Get tags
       set_fact:
         vmss_tags: >-
           {{ vmss_tags | default({})
             | combine({ item.name: [ 'Name:' + item.name + '-' + ci_branch_name ] }) }}
-      loop: "{{ molecule_yml.platforms }}"
-
-    - name: Get list of VMSSs
-      azure_rm_virtualmachinescaleset_facts:
-        resource_group: "{{ az_resource_group_name }}"
-        tags: "{{ vmss_tags[item.name]  }}"
-      loop: "{{ molecule_yml.platforms }}"
-      register: vmss_sets
+        unique_vmss_name: >-
+          {{ unique_vmss_name | default({})
+            | combine({ item.name: 'tst-' + ((item.name + '-' + ci_branch_name)
+            | to_uuid)[:8] }) }}
+      loop: '{{ molecule_yml.platforms }}'
 
     - name: Destroy molecule instance(s)
       azure_rm_virtualmachinescaleset:
-        resource_group: "{{ az_resource_group_name }}"
-        location: "{{ az_location }}"
-        name: "{{ item.ansible_facts.azure_vmss[0].name }}"
+        resource_group: '{{ az_resource_group_name }}'
+        location: '{{ az_location }}'
+        name: '{{ unique_vmss_name[item.name] }}'
         state: absent
         remove_on_absent: all # also remove associated resources
       register: servers
-      loop: "{{ vmss_sets.results }}"
+      loop: '{{ molecule_yml.platforms }}'
       loop_control:
-        label: "{{ item.item.name }}"
-      when: item.ansible_facts.azure_vmss | length > 0
+        label: '{{ item.name }}'
+      changed_when: false
       async: 7200
       poll: 0
 
     - name: Wait for instance(s) deletion to complete
       async_status:
-        jid: "{{ item.ansible_job_id }}"
-      when: item.ansible_job_id is defined
-      loop: "{{ servers.results }}"
+        jid: '{{ item.ansible_job_id }}'
+      loop: '{{ servers.results }}'
       loop_control:
-        label: "{{ item.item.item.name }}"
+        label: '{{ item.item.name }}'
       register: vmss_delete
       until: vmss_delete.finished
       delay: 20
       retries: 300
-
-    #  Load balancer resources must be deleted as well
-    - name: Get list of Load balancers
-      azure_rm_loadbalancer_facts:
-        resource_group: "{{ az_resource_group_name }}"
-        tags: "{{ vmss_tags[item.name]  }}"
-      loop: "{{ molecule_yml.platforms }}"
-      register: lb_sets
-
-    - name: Destroy Load balancer resources
-      azure_rm_loadbalancer:
-        resource_group: "{{ az_resource_group_name }}"
-        location: "{{ az_location }}"
-        name: "{{ item.ansible_facts.azure_loadbalancers[0].name }}"
-        state: absent
-      register: lbs
-      loop: "{{ lb_sets.results }}"
-      loop_control:
-        label: "{{ item.item.name }}"
-      when: item.ansible_facts.azure_loadbalancers | length > 0
-      async: 7200
-      poll: 0
-
-    - name: Wait for LBs deletion to complete
-      async_status:
-        jid: "{{ item.ansible_job_id }}"
-      when: item.ansible_job_id is defined
-      loop: "{{ lbs.results }}"
-      loop_control:
-        label: "{{ item.item.item.name }}"
-      register: lbs_delete
-      until: lbs_delete.finished
-      delay: 10
-      retries: 300
-
-    # Public IP address resources must be deleted as well
-    - name: Get list of IPs
-      azure_rm_publicipaddress_facts:
-        resource_group: "{{ az_resource_group_name }}"
-        tags: "{{ vmss_tags[item.name]  }}"
-      loop: "{{ molecule_yml.platforms }}"
-      register: ip_sets
-
-    - name: Destroy Public IP address resources
-      azure_rm_publicipaddress:
-        resource_group: "{{ az_resource_group_name }}"
-        location: "{{ az_location }}"
-        name: "{{ item.ansible_facts.azure_publicipaddresses[0].name }}"
-        state: absent
-      register: ips
-      loop: "{{ ip_sets.results }}"
-      loop_control:
-        label: "{{ item.item.name }}"
-      when: item.ansible_facts.azure_publicipaddresses | length > 0
-      async: 7200
-      poll: 0
-
-    - name: Wait for Public IP address resource deletion to complete
-      async_status:
-        jid: "{{ item.ansible_job_id }}"
-      when: item.ansible_job_id is defined
-      loop: "{{ ips.results }}"
-      loop_control:
-        label: "{{ item.item.item.name }}"
-      register: ip_delete
-      until: ip_delete.finished
-      delay: 10
-      retries: 300
-
-    # Get unique idempotent name for VMSS
-    - name: Get unique VMSS name dicts
-      set_fact:
-        unique_vmss_name: >-
-          {{ unique_vmss_name | default({})
-            | combine({ item.name: 'tst-' + ((item.name + '-' + ci_branch_name) | to_uuid)[:8] }) }}
-      loop: "{{ molecule_yml.platforms }}"
-
-    - name: Delete temporary Terraform directories
-      file:
-        path: "/tmp/tf-{{ unique_vmss_name[item.name] }}/"
-        state: absent
-      loop: "{{ molecule_yml.platforms }}"
-
-    - name: Delete Terraform remote state files
-      azure_rm_storageblob:
-        resource_group: "{{ az_resource_group_name }}"
-        storage_account_name: "{{ az_storage_account_name }}"
-        container: "{{ az_container }}"
-        blob: "{{ az_container_key }}env:{{ unique_vmss_name[item.name] }}"
-        state: absent
-      loop: "{{ molecule_yml.platforms }}"
-
-    # Mandatory configuration for Molecule to function.
 
     - name: Populate instance config
       set_fact:
@@ -159,4 +61,3 @@
       copy:
         content: '{{ instance_conf | to_json | from_json | molecule_to_yaml | molecule_header }}'
         dest: '{{ molecule_instance_config }}'
-      when: servers.changed | bool

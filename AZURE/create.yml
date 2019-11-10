@@ -3,13 +3,18 @@
   hosts: localhost
   connection: local
   gather_facts: false
-  no_log: "{{ not ((lookup('env', 'MOLECULE_DEBUG') | bool) or (molecule_yml.provisioner.log | default(false) | bool)) }}"
+  no_log: >-
+    {{ not ((lookup('env', 'MOLECULE_DEBUG') | bool)
+        or (molecule_yml.provisioner.log | default(false) | bool)) }}
   vars:
-    ci_branch_name: "{{ lookup('env', 'CI_COMMIT_REF_NAME') }}"
+    ci_branch_name: >-
+      {{ lookup('env', 'CI_COMMIT_REF_NAME') }}
 
     # Azure VM images details
-    vm_admin_username: "{{ lookup('env', 'WINRM_ADMIN_ACC') | default('vm-admin', true) }}"
-    vm_admin_password: "{{ lookup('env', 'WINRM_ADMIN_PWD') | default('M0leCule123!', true) }}"
+    vm_admin_username: >-
+      {{ lookup('env', 'WINRM_ADMIN_ACC') | default('vm-admin', true) }}
+    vm_admin_password: >-
+      {{ lookup('env', 'WINRM_ADMIN_PWD') | default('M0leCule123!', true) }}
 
     keypair_name: "molecule-key_\
       {{ lookup('env','MOLECULE_PROJECT_DIRECTORY').split('/')[-1] }}_\
@@ -18,15 +23,27 @@
 
     ssh_port: 22
     winrm_port: 5986
+    az_resource_group_name: epm-ldi # hardcode!!!
 
-    # Azure storage details for Terraform backend
-    az_resource_group_name: "epm-ldi" # hardcode!!!
-    az_storage_account_name: "storage11490" # hardcode!!!
-    az_container: "gitlab-ci-tfstate" # hardcode!!!
-    az_container_key: "tfstate-" # hardcode!!!
 
+    groups_item_var: '{{ item.groups }}'
+    os_platform: >-
+      {{ ('windows' in groups_item_var) | ternary('windows', 'linux') }}
     azure_images:
       linux:
+        connection_port: 22
+        connection_protocol: ssh
+        ext_profile: {}
+        azure_os_profile:
+          computerNamePrefix: myVmss
+          adminUsername: '{{ vm_admin_username }}'
+          adminPassword: '{{ vm_admin_password }}'
+          linuxConfiguration:
+            disablePasswordAuthentication: true
+            ssh:
+              publicKeys:
+              - path: '/home/{{ vm_admin_username }}/.ssh/authorized_keys'
+                keyData: '{{ keypair.public_key }}'
         centos7:
           publisher: OpenLogic
           offer: CentOS
@@ -40,12 +57,12 @@
         ubuntu16:
           publisher: Canonical
           offer: UbuntuServer
-          sku: "16.04-LTS"
+          sku: 16.04-LTS
           version: latest
         ubuntu18:
           publisher: Canonical
           offer: UbuntuServer
-          sku: "18.04-LTS"
+          sku: 18.04-LTS
           version: latest
         debian9:
           publisher: credativ
@@ -53,16 +70,47 @@
           sku: '9'
           version: latest
       windows:
+        connection_port: 5986
+        connection_protocol: winrm
+        ext_profile:
+          extensions:
+            - name: winrm-extension
+              properties:
+                publisher: Microsoft.Compute
+                type: CustomScriptExtension
+                typeHandlerVersion: '1.9'
+                settings:
+                  commandToExecute: "powershell -ExecutionPolicy Unrestricted -File ConfigureRemotingForAnsible.ps1 -EnableCredSSP"
+                  fileUris: ["https://raw.githubusercontent.com/ansible/ansible/devel/examples/scripts/ConfigureRemotingForAnsible.ps1"]
+                autoUpgradeMinorVersion: true
+        azure_os_profile:
+          computerNamePrefix: myVmss
+          adminUsername: '{{ vm_admin_username }}'
+          adminPassword: '{{ vm_admin_password }}'
         windows2016core:
           publisher: MicrosoftWindowsServer
           offer: WindowsServer
-          sku: "2016-Datacenter-Server-Core-smalldisk"
+          sku: 2016-Datacenter-Server-Core-smalldisk
           version: latest
         windows2019core:
           publisher: MicrosoftWindowsServer
           offer: WindowsServer
-          sku: "2019-Datacenter-Core-smalldisk"
+          sku: 2019-Datacenter-Core-smalldisk
           version: latest
+    osProfileLinux:
+      computerNamePrefix: myVmss
+      adminUsername: '{{ vm_admin_username }}'
+      adminPassword: '{{ vm_admin_password }}'
+      linuxConfiguration:
+        disablePasswordAuthentication: true
+        ssh:
+          publicKeys:
+          - path: '/home/{{ vm_admin_username }}/.ssh/authorized_keys'
+            keyData: '{{ keypair.public_key }}'
+    osProfileWindows:
+      computerNamePrefix: myVmss
+      adminUsername: '{{ vm_admin_username }}'
+      adminPassword: '{{ vm_admin_password }}'
 
   tasks:
     - name: debug CI_COMMIT_REF_NAME
@@ -78,8 +126,8 @@
 
     - name: Persist the keypair
       copy:
-        dest: "{{ keypair_path }}"
-        src: "{{ keypair.filename }}"
+        dest: '{{ keypair_path }}'
+        src: '{{ keypair.filename }}'
         mode: 0600
       when: keypair.changed | bool
 
@@ -90,86 +138,128 @@
       set_fact:
         unique_vmss_name: >-
           {{ unique_vmss_name | default({})
-            | combine({ item.name: 'tst-' + ((item.name + '-' + ci_branch_name) | to_uuid)[:8] }) }}
-      loop: "{{ molecule_yml.platforms }}"
+            | combine({ item.name: 'tst-' + ((item.name + '-' + ci_branch_name)
+            | to_uuid)[:8] }) }}
+      loop: '{{ molecule_yml.platforms }}'
       loop_control:
-        label: "{{ item.name }}"
+        label: '{{ item.name }}'
 
-    # As we're running terraform states in loop, it confuses terraform workspaces
-    # Therefore we will run each tf state from a separate directory
-    - name: Duplicate Terraform directories under unique names
-      synchronize:
-        src: "tf/"
-        dest: "/tmp/tf-{{ unique_vmss_name[item.name] }}/"
-      loop: "{{ molecule_yml.platforms }}"
-      loop_control:
-        label: "{{ item.name }}"
-
-    - name: Create VM Scale Set(s)
-      terraform:
-        project_path: "/tmp/tf-{{ unique_vmss_name[item.name] }}/"
-        workspace: "{{ unique_vmss_name[item.name] }}"
-        force_init: true
-        backend_config:
-          resource_group_name: "{{ az_resource_group_name }}"
-          storage_account_name: "{{ az_storage_account_name }}"
-          container_name: "{{ az_container }}"
-          key: "{{ az_container_key }}"
-        variables:
-          vmss_name: "{{ unique_vmss_name[item.name] }}"
-          resource_group_name: "{{ item.az_resource_group_name }}"
-          location: "{{ item.az_location }}"
-          virtual_network_name: "{{ item.az_virtual_network_name }}"
-          subnet_name: "{{ item.az_subnet_name }}"
-          network_security_group: "{{ item.az_network_security_group }}"
-          vm_size: "{{ item.vm_size }}"
-          disk_type: Standard_LRS # Standard HDD, cheap :)
-          admin_username: "{{ vm_admin_username }}"
-          admin_password: "{{ ('windows' in item.groups) | ternary(vm_admin_password, omit) }}"
-          ssh_port: "{{ ('windows' in item.groups) | ternary(omit, ssh_port) }}"
-          winrm_port: "{{ ('windows' in item.groups) | ternary(winrm_port, omit) }}"
-          ssh_public_key: "{{ ('windows' in item.groups) | ternary(omit, keypair.public_key) }}" # we have to pass param for Linux VMs only
-          img_offer: "{{ (('windows' in item.groups) | ternary(azure_images.windows, azure_images.linux))[item.platform]['offer'] }}"
-          img_publisher: "{{ (('windows' in item.groups) | ternary(azure_images.windows, azure_images.linux))[item.platform]['publisher'] }}"
-          img_sku: "{{ (('windows' in item.groups) | ternary(azure_images.windows, azure_images.linux))[item.platform]['sku'] }}"
-          img_version: "{{ (('windows' in item.groups) | ternary(azure_images.windows, azure_images.linux))[item.platform]['version'] }}"
-          tag_name: "{{ item.name }}-{{ ci_branch_name }}"
-          tag_instance: "{{ item.name }}"
-          tag_os: "{{ (('windows' in item.groups) | ternary('Windows', 'Linux')) }}"
-      loop: "{{ molecule_yml.platforms }}"
+    - name: Create VM Scale Set
+      azure_rm_resource:
+        resource_group: '{{ az_resource_group_name }}'
+        provider: compute
+        resource_type: virtualmachinescalesets
+        resource_name: '{{ unique_vmss_name[item.name] }}'
+        idempotency: true
+        body:
+          location: '{{ item.az_location }}'
+          tags:
+            Name: '{{ item.name }}-{{ ci_branch_name }}'
+            Instance: '{{ item.name }}'
+            OS: '{{ os_platform }}'
+            Managed_by: Molecule
+          sku:
+            name: '{{ item.vm_size }}'
+            capacity: 1
+          properties:
+            overprovision: false
+            upgradePolicy:
+              mode: Automatic
+            virtualMachineProfile:
+              priority: Low
+              evictionPolicy: delete
+              storageProfile:
+                osDisk:
+                  caching: ReadWrite
+                  createOption: FromImage
+                imageReference:
+                  publisher: "{{ azure_images[os_platform][item.platform]['publisher'] }}"
+                  offer: "{{ azure_images[os_platform][item.platform]['offer'] }}"
+                  sku: "{{ azure_images[os_platform][item.platform]['sku'] }}"
+                  version: latest
+              osProfile: "{{ azure_images[os_platform]['azure_os_profile'] }}"
+              networkProfile:
+                networkInterfaceConfigurations:
+                  - Name: myVmss
+                    properties:
+                      primary: true
+                      networkSecurityGroup:
+                        id: "/subscriptions/0cfbdd57-0340-4c6d-a3f0-91c618995c6e/\
+                            resourceGroups/epm-ldi/providers/\
+                            Microsoft.Network/networkSecurityGroups/epm-ldi-northeurope-sg"
+                      ipConfigurations:
+                        - name: ipconfig1
+                          properties:
+                            subnet:
+                              id: "/subscriptions/0cfbdd57-0340-4c6d-a3f0-91c618995c6e/\
+                                  resourceGroups/epm-ldi/providers/\
+                                  Microsoft.Network/virtualNetworks/epm-ldi-northeurope-vnet/\
+                                  subnets/epm-ldi-northeurope-subnet"
+              extensionProfile: "{{ azure_images[os_platform]['ext_profile'] }}"
+      loop: '{{ molecule_yml.platforms }}'
+      changed_when: false
       register: vmss
       async: 7200
       poll: 0
 
     - name: Wait for VMSS creation to complete
       async_status:
-        jid: "{{ item.ansible_job_id }}"
-      loop: "{{ vmss.results }}"
+        jid: '{{ item.ansible_job_id }}'
+      loop: '{{ vmss.results }}'
       loop_control:
-        label: "{{ item.item.name }}"
+        label: '{{ item.item.name }}'
       register: vmss_create
       until: vmss_create.finished
-      delay: 20
+      delay: 5
       retries: 300
 
-    # Mandatory configuration for Molecule to function.
+    - name: Get Instance ID
+      azure_rm_resource:
+        method: GET
+        url: "/subscriptions/{{ lookup('env','AZURE_SUBSCRIPTION_ID') }}\
+              /resourceGroups/{{ az_resource_group_name }}/providers/\
+              microsoft.Compute/virtualMachineScaleSets/\
+              {{ item.invocation.module_args.resource_name }}/virtualMachines/"
+      loop: '{{ vmss_create.results }}'
+      changed_when: false
+      no_log: true
+      register: vmss_instances_id
+
+    - name: Get Private IP
+      azure_rm_resource:
+          method: GET
+          url:  "/subscriptions/{{ lookup('env','AZURE_SUBSCRIPTION_ID') }}\
+                /resourceGroups/{{ az_resource_group_name }}/providers/\
+                microsoft.Compute/virtualMachineScaleSets/\
+                {{ item.item.invocation.module_args.resource_name }}/\
+                virtualMachines/{{ item.response.value[0].instanceId }}/networkInterfaces"
+      loop: '{{ vmss_instances_id.results }}'
+      changed_when: false
+      no_log: true
+      register: vmss_private_ip
 
     - name: Populate instance config dict
       set_fact:
         instance_conf_dict:
-          instance: "{{ item.outputs.vmss_tag_instance.value }}"
-          address: "{{ item.outputs.vmss_private_ip.value }}"
-          public_ip: "{{ item.outputs.vmss_public_fqdn.value }}"
-          user: "{{ vm_admin_username }}" # common for all OSes, Azure specific
-          port: "{{ ('windows' in item.item.item.groups) | ternary(winrm_port, ssh_port) }}"
-          identity_file: "{{ keypair_path }}"
-          instance_ids: "{{ item.outputs.vmss_id.value }}"
-          connection: "{{ ('windows' in item.item.item.groups) | ternary('winrm', 'ssh') }}"
-      loop: "{{ vmss_create.results }}"
+          instance: '{{ item.item.item.item.item.name }}'
+          address: >-
+            {{ (item.response.value[0].properties.ipConfigurations
+              | selectattr('properties.primary', 'equalto', true)
+              | first).properties.privateIPAddress }}
+          user: '{{ vm_admin_username }}' # common for all OSes, Azure specific
+          port: >-
+            {{ azure_images[os_platform]['connection_port'] }}
+          identity_file: '{{ keypair_path }}'
+          instance_ids: '{{ item.item.item.response.id }}'
+          connection: >-
+            {{ azure_images[os_platform]['connection_protocol'] }}
+      loop: '{{ vmss_private_ip.results }}'
       loop_control:
-        label: "{{ item.item.item.name }}"
+        label: '{{ item.item.item.item.item.name }}'
       register: instance_config_dict
       when: vmss_create.changed | bool
+      vars:
+        groups_item_var: '{{ item.item.item.item.item.groups }}'
 
     - name: Convert instance config dict to a list
       set_fact:
@@ -180,15 +270,18 @@
 
     - name: Dump instance config
       copy:
-        content: "{{ instance_conf | to_json | from_json | molecule_to_yaml | molecule_header }}"
-        dest: "{{ molecule_instance_config }}"
+        content: >-
+          {{ instance_conf | to_json | from_json | molecule_to_yaml | molecule_header }}
+        dest: '{{ molecule_instance_config }}'
       when: vmss_create.changed | bool
 
     - name: Wait for connection
       wait_for:
-        port: "{{ item.port }}"
-        host: "{{ item.address }}"
-        delay: 2
-        connect_timeout: 2
-        timeout: 320
-      loop: "{{ lookup('file', molecule_instance_config) | molecule_from_yaml }}"
+        port: '{{ item.port }}'
+        host: '{{ item.address }}'
+        delay: 0
+        sleep: 1
+        connect_timeout: 12
+        timeout: 420
+      loop: >-
+        {{ lookup('file', molecule_instance_config) | molecule_from_yaml }}

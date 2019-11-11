@@ -260,8 +260,6 @@
                                   resourceGroups/epm-ldi/providers/\
                                   Microsoft.Network/virtualNetworks/epm-ldi-northeurope-vnet/\
                                   subnets/epm-ldi-northeurope-subnet"
-                          loadBalancerBackendAddressPools:
-                          - id: 
               extensionProfile: "{{ azure_images[os_platform]['ext_profile'] }}"
       loop: '{{ molecule_yml.platforms }}'
       changed_when: false

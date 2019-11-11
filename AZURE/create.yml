@@ -146,6 +146,18 @@
         location: '{{ item.az_location }}'
         tags: '{{ tagsForVmss }}'
       loop: '{{ molecule_yml.platforms }}'
+      register: public_ip
+
+    - name: Wait for public ip creation to complete
+      async_status:
+        jid: '{{ item.ansible_job_id }}'
+      loop: '{{ public_ip.results }}'
+      loop_control:
+        label: '{{ item.item.name }}'
+      register: public_ip_create
+      until: public_ip_create.finished
+      delay: 20
+      retries: 300
 
     - name: Create load balancer
       azure_rm_loadbalancer:

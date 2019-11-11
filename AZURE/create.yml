@@ -191,6 +191,12 @@
       poll: 0
       register: loadbalancers
 
+    - name: Check load balancer info
+      debug:
+        var: item
+      loop: loadbalancers.results
+        
+
     - name: Wait for load balancer creation to complete
       async_status:
         jid: '{{ item.ansible_job_id }}'
@@ -201,17 +207,6 @@
       until: loadbalancers_create.finished
       delay: 20
       retries: 300
-
-    - name: Get load balancer info
-      azure_rm_loadbalancer_info:
-        name: '{{ unique_vmss_name[item.name] }}-lb'
-        resource_group: '{{ az_resource_group_name }}'
-      loop: '{{ molecule_yml.platforms }}'
-      register: loadbalancers_info
-
-    - name: Check info about load balancers
-      debug:
-        var: loadbalancers_info
 
     - name: Create VM Scale Set
       azure_rm_resource:

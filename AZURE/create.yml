@@ -151,7 +151,7 @@
         domain_name: '{{ unique_vmss_name[item.name] }}'
         location: '{{ item.az_location }}'
         tags: '{{ tagsForVmss }}'
-      when: {{ item.assign_public_ip | default(assign_public_ip) }}
+      when: '{{ item.assign_public_ip | default(assign_public_ip) }}'
       loop: '{{ molecule_yml.platforms }}'
       changed_when: false
       async: 7200
@@ -192,7 +192,7 @@
           protocol: Tcp
           probe: prob0
         tags: '{{ tagsForVmss }}'
-      when: {{ item.assign_public_ip | default(assign_public_ip) }}
+      when: '{{ item.assign_public_ip | default(assign_public_ip) }}'
       loop: '{{ molecule_yml.platforms }}'
       changed_when: false
       async: 7200

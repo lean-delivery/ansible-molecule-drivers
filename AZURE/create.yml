@@ -204,7 +204,7 @@
 
     - name: Check load balancer info
       debug:
-        var: "{{ item }}"
+        var: "{{ item.invocation }}"
       with_items: "{{ loadbalancers_create.results }}"
 
     - name: Create VM Scale Set

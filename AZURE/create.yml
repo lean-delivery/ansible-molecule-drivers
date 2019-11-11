@@ -146,6 +146,9 @@
         location: '{{ item.az_location }}'
         tags: '{{ tagsForVmss }}'
       loop: '{{ molecule_yml.platforms }}'
+      changed_when: false
+      async: 7200
+      poll: 0
       register: public_ip
 
     - name: Wait for public ip creation to complete

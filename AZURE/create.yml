@@ -104,6 +104,12 @@
       Instance: '{{ item.name }}'
       OS: '{{ os_platform }}'
       Managed_by: Molecule
+    withLoadBalancer:
+      - id: "/subscriptions/{{ lookup('env','AZURE_SUBSCRIPTION_ID') }}\
+            /resourceGroups/{{ az_resource_group_name }}/providers/Microsoft.Network/\
+            loadBalancers/{{ unique_vmss_name[item.name] }}-lb/\
+            backendAddressPools/backendaddrpool0"
+    assign_public_ip: false
 
   tasks:
     - name: debug CI_COMMIT_REF_NAME
@@ -250,12 +256,8 @@
                                   resourceGroups/epm-ldi/providers/\
                                   Microsoft.Network/virtualNetworks/epm-ldi-northeurope-vnet/\
                                   subnets/epm-ldi-northeurope-subnet"
-                            loadBalancerBackendAddressPools:
-                            - id: "/subscriptions/{{ lookup('env','AZURE_SUBSCRIPTION_ID') }}\
-                                  /resourceGroups/{{ az_resource_group_name }}/providers/Microsoft.Network/\
-                                  loadBalancers/{{ unique_vmss_name[item.name] }}-lb/\
-                                  backendAddressPools/backendaddrpool0"
-              extensionProfile: "{{ azure_images[os_platform]['ext_profile'] }}"
+                            loadBalancerBackendAddressPools: >-
+                              {{ (assign_public_ip) | ternary(withLoadBalancer, '{}') }}
             singlePlacementGroup: true
       loop: '{{ molecule_yml.platforms }}'
       changed_when: false

@@ -257,7 +257,7 @@
                                   Microsoft.Network/virtualNetworks/epm-ldi-northeurope-vnet/\
                                   subnets/epm-ldi-northeurope-subnet"
                             loadBalancerBackendAddressPools: >-
-                              {{ (assign_public_ip) | ternary(withLoadBalancer, '{}') }}
+                              {{ assign_public_ip | ternary(withLoadBalancer, omit) }}
             singlePlacementGroup: true
       loop: '{{ molecule_yml.platforms }}'
       changed_when: false

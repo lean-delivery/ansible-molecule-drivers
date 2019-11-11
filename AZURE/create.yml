@@ -163,6 +163,7 @@
         load_balancing_rules:
         - name: lbrbalancingrule0
           frontend_ip_configuration: "PublicIPAddress"
+          backend_address_pool: backendaddrpool0
           frontend_port: "{{ azure_images[os_platform]['connection_port'] }}"
           backend_port: "{{ azure_images[os_platform]['connection_port'] }}"
           protocol: Tcp

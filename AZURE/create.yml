@@ -158,9 +158,13 @@
       poll: 0
       register: public_ip
 
+    - name: debug public
+      debug:
+        var: public_ip.results
+
     - name: Wait for public ip creation to complete
       async_status:
-        jid: '{{ item.ansible_job_id }}'
+        jid: '{{ item.ansible_job_id | default(true) }}'
       loop: '{{ public_ip.results }}'
       loop_control:
         label: '{{ item.item.name }}'

@@ -265,6 +265,10 @@
                                   resourceGroups/epm-ldi/providers/\
                                   Microsoft.Network/virtualNetworks/epm-ldi-northeurope-vnet/\
                                   subnets/epm-ldi-northeurope-subnet"
+                          loadBalancerBackendAddressPools: "/subscriptions/{{ lookup('env','AZURE_SUBSCRIPTION_ID') }}\
+                                                /resourceGroups/{{ az_resource_group_name }}/providers/Microsoft.Network/\
+                                                loadBalancers/{{ unique_vmss_name[item.name] }}-lb/\
+                                                backendAddressPools/backendaddrpool0?api-version=2019-09-01"
               extensionProfile: "{{ azure_images[os_platform]['ext_profile'] }}"
       loop: '{{ molecule_yml.platforms }}'
       changed_when: false

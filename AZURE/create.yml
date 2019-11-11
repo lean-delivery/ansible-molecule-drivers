@@ -195,7 +195,6 @@
       debug:
         var: item
       loop: loadbalancers.results
-        
 
     - name: Wait for load balancer creation to complete
       async_status:

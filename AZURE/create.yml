@@ -186,11 +186,32 @@
           probe: prob0
         tags: '{{ tagsForVmss }}'
       loop: '{{ molecule_yml.platforms }}'
+      changed_when: false
+      async: 7200
+      poll: 0
       register: loadbalancers
 
-    - name: Debug lb
+    - name: Wait for load balancer creation to complete
+      async_status:
+        jid: '{{ item.ansible_job_id }}'
+      loop: '{{ loadbalancers.results }}'
+      loop_control:
+        label: '{{ item.item.name }}'
+      register: loadbalancers_create
+      until: loadbalancers_create.finished
+      delay: 20
+      retries: 300
+
+    - name: Get load balancer info
+      azure_rm_loadbalancer_info:
+        resource_group: '{{ az_resource_group_name }}'
+        name: '{{ unique_vmss_name[item.name] }}-lb'
+      loop: '{{ molecule_yml.platforms }}'
+      register: loadbalancers_info
+
+    - name: Check info about load balancers
       debug:
-        var: loadbalancers
+        var: loadbalancers_info
 
     - name: Create VM Scale Set
       azure_rm_resource:
@@ -239,6 +260,8 @@
                                   resourceGroups/epm-ldi/providers/\
                                   Microsoft.Network/virtualNetworks/epm-ldi-northeurope-vnet/\
                                   subnets/epm-ldi-northeurope-subnet"
+                          loadBalancerBackendAddressPools:
+                          - id: 
               extensionProfile: "{{ azure_images[os_platform]['ext_profile'] }}"
       loop: '{{ molecule_yml.platforms }}'
       changed_when: false

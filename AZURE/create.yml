@@ -142,7 +142,7 @@
         resource_group: '{{ az_resource_group_name }}'
         name: '{{ unique_vmss_name[item.name] }}-ip'
         allocation_method: dynamic
-        domain_name: '{{ az_resource_group_name }}'
+        domain_name: '{{ unique_vmss_name[item.name] }}'
         #tags: '{{ tagsForVmss }}'
       loop: '{{ molecule_yml.platforms }}'
 

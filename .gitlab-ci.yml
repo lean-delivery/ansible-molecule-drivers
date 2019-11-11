@@ -31,7 +31,7 @@ AZURE role from cookiecutter test:
     - mkdir -p ansible-role-default_role/molecule/resources/provisioning/
     - mv AZURE ansible-role-default_role/molecule/resources/provisioning/
     - cd ansible-role-default_role
-    - molecule test -s cloud-azure-direct
+    - molecule create -s cloud-azure-direct
   tags:
     - azure
 

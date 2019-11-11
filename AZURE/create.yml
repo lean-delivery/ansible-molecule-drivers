@@ -205,7 +205,7 @@
     - name: Check load balancer info
       debug:
         var: "{{ item }}"
-      loop: "{{ loadbalancers_create.results | list }}"
+      loop: "{{ loadbalancers_create.results }}"
 
     - name: Create VM Scale Set
       azure_rm_resource:

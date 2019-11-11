@@ -143,6 +143,7 @@
         name: '{{ unique_vmss_name[item.name] }}-ip'
         allocation_method: dynamic
         domain_name: '{{ unique_vmss_name[item.name] }}'
+        sku: Standard
         location: '{{ item.az_location }}'
         tags: '{{ tagsForVmss }}'
       loop: '{{ molecule_yml.platforms }}'

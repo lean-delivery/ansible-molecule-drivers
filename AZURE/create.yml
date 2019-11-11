@@ -143,7 +143,6 @@
         name: '{{ unique_vmss_name[item.name] }}-ip'
         allocation_method: dynamic
         domain_name: '{{ unique_vmss_name[item.name] }}'
-        sku: Standard
         location: '{{ item.az_location }}'
         tags: '{{ tagsForVmss }}'
       loop: '{{ molecule_yml.platforms }}'
@@ -168,7 +167,6 @@
         resource_group: '{{ az_resource_group_name }}'
         name: '{{ unique_vmss_name[item.name] }}-lb'
         location: '{{ item.az_location }}'
-        sku: Standard
         frontend_ip_configurations:
         - name: "PublicIPAddress"
           public_ip_address: '{{ unique_vmss_name[item.name] }}-ip'

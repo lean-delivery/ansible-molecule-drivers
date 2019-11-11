@@ -161,7 +161,7 @@
     - name: Wait for public ip creation to complete
       async_status:
         jid: '{{ item.ansible_job_id }}'
-      when: '{{ not item.skipped }}'
+      when: '{{ not item.skipped | default(false) }}'
       loop: '{{ public_ip.results }}'
       loop_control:
         label: '{{ item.item.name }}'

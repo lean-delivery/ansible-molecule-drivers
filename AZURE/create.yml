@@ -203,7 +203,7 @@
     - name: Wait for load balancer creation to complete
       async_status:
         jid: '{{ item.ansible_job_id }}'
-      when: '{{ not item.skipped }}'
+      when: '{{ not item.skipped | default(false) }}'
       loop: '{{ loadbalancers.results }}'
       loop_control:
         label: '{{ item.item.name }}'

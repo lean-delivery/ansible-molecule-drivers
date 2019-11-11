@@ -151,7 +151,7 @@
         domain_name: '{{ unique_vmss_name[item.name] }}'
         location: '{{ item.az_location }}'
         tags: '{{ tagsForVmss }}'
-      when: '{{ item.assign_public_ip | default(assign_public_ip) }}'
+      when: item.assign_public_ip | default(assign_public_ip)
       loop: '{{ molecule_yml.platforms }}'
       changed_when: false
       async: 7200
@@ -161,7 +161,7 @@
     - name: Wait for public ip creation to complete
       async_status:
         jid: '{{ item.ansible_job_id }}'
-      when: '{{ not item.skipped | default(false) }}'
+      when: not item.skipped | default(false)
       loop: '{{ public_ip.results }}'
       loop_control:
         label: '{{ item.item.name }}'
@@ -193,7 +193,7 @@
           protocol: Tcp
           probe: prob0
         tags: '{{ tagsForVmss }}'
-      when: '{{ item.assign_public_ip | default(assign_public_ip) }}'
+      when: item.assign_public_ip | default(assign_public_ip)
       loop: '{{ molecule_yml.platforms }}'
       changed_when: false
       async: 7200
@@ -203,7 +203,7 @@
     - name: Wait for load balancer creation to complete
       async_status:
         jid: '{{ item.ansible_job_id }}'
-      when: '{{ not item.skipped | default(false) }}'
+      when: not item.skipped | default(false)
       loop: '{{ loadbalancers.results }}'
       loop_control:
         label: '{{ item.item.name }}'

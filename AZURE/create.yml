@@ -97,20 +97,6 @@
           offer: WindowsServer
           sku: 2019-Datacenter-Core-smalldisk
           version: latest
-    osProfileLinux:
-      computerNamePrefix: myVmss
-      adminUsername: '{{ vm_admin_username }}'
-      adminPassword: '{{ vm_admin_password }}'
-      linuxConfiguration:
-        disablePasswordAuthentication: true
-        ssh:
-          publicKeys:
-          - path: '/home/{{ vm_admin_username }}/.ssh/authorized_keys'
-            keyData: '{{ keypair.public_key }}'
-    osProfileWindows:
-      computerNamePrefix: myVmss
-      adminUsername: '{{ vm_admin_username }}'
-      adminPassword: '{{ vm_admin_password }}'
 
   tasks:
     - name: debug CI_COMMIT_REF_NAME
@@ -210,7 +196,7 @@
         label: '{{ item.item.name }}'
       register: vmss_create
       until: vmss_create.finished
-      delay: 5
+      delay: 20
       retries: 300
 
     - name: Get Instance ID

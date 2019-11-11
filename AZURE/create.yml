@@ -141,7 +141,7 @@
       azure_rm_publicipaddress:
         resource_group: '{{ az_resource_group_name }}'
         name: '{{ unique_vmss_name[item.name] }}-ip'
-        allocation_method: dynamic
+        allocation_method: Dynamic
         domain_name: '{{ unique_vmss_name[item.name] }}'
         location: '{{ item.az_location }}'
         tags: '{{ tagsForVmss }}'
@@ -201,22 +201,6 @@
       until: loadbalancers_create.finished
       delay: 20
       retries: 300
-
-    - name: Get load balancer
-      azure_rm_resource:
-        method: GET
-        url: "/subscriptions/{{ lookup('env','AZURE_SUBSCRIPTION_ID') }}\
-              /resourceGroups/{{ az_resource_group_name }}/providers/Microsoft.Network/\
-              loadBalancers/{{ unique_vmss_name[item.name] }}-lb/\
-              backendAddressPools/backendaddrpool0?api-version=2019-09-01"
-      loop: '{{ molecule_yml.platforms }}'
-      changed_when: false
-      no_log: true
-      register: loadbalancers_id
-
-    - name: Debug
-      debug:
-        var: loadbalancers_id
 
     - name: Create VM Scale Set
       azure_rm_resource:

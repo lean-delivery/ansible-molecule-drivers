@@ -109,7 +109,7 @@
             /resourceGroups/{{ az_resource_group_name }}/providers/Microsoft.Network/\
             loadBalancers/{{ unique_vmss_name[item.name] }}-lb/\
             backendAddressPools/backendaddrpool0"
-    assign_public_ip: false
+    assign_public_ip: true
 
   tasks:
     - name: debug CI_COMMIT_REF_NAME
@@ -262,6 +262,7 @@
                                   subnets/epm-ldi-northeurope-subnet"
                             loadBalancerBackendAddressPools: >-
                               {{ (item.assign_public_ip | default(assign_public_ip)) | ternary(withLoadBalancer, omit) }}
+              extensionProfile: "{{ azure_images[os_platform]['ext_profile'] }}"
             singlePlacementGroup: true
       loop: '{{ molecule_yml.platforms }}'
       changed_when: false

@@ -204,8 +204,8 @@
 
     - name: Get load balancer info
       azure_rm_loadbalancer_info:
-        resource_group: '{{ az_resource_group_name }}'
         name: '{{ unique_vmss_name[item.name] }}-lb'
+        resource_group: '{{ az_resource_group_name }}'
       loop: '{{ molecule_yml.platforms }}'
       register: loadbalancers_info
 

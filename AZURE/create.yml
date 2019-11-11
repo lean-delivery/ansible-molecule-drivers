@@ -166,6 +166,7 @@
       azure_rm_loadbalancer:
         resource_group: '{{ az_resource_group_name }}'
         name: '{{ unique_vmss_name[item.name] }}-lb'
+        location: '{{ item.az_location }}'
         frontend_ip_configurations:
         - name: "PublicIPAddress"
           public_ip_address: '{{ unique_vmss_name[item.name] }}-ip'

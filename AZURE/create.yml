@@ -23,7 +23,9 @@
 
     ssh_port: 22
     winrm_port: 5986
-    az_resource_group_name: epm-ldi # hardcode!!!
+    az_resource_group_name: epm-ldi
+    az_storage_account_name: "storage11490"
+    az_container: "gitlab-ci-tfstate"
 
 
     groups_item_var: '{{ item.groups }}'
@@ -97,6 +99,11 @@
           offer: WindowsServer
           sku: 2019-Datacenter-Core-smalldisk
           version: latest
+    tagsForVmss:
+      Name: '{{ item.name }}-{{ ci_branch_name }}'
+      Instance: '{{ item.name }}'
+      OS: '{{ os_platform }}'
+      Managed_by: Molecule
 
   tasks:
     - name: debug CI_COMMIT_REF_NAME
@@ -130,6 +137,43 @@
       loop_control:
         label: '{{ item.name }}'
 
+    - name: Create a public ip address
+      azure_rm_publicipaddress:
+        resource_group: '{{ az_resource_group_name }}'
+        name: '{{ unique_vmss_name[item.name] }}-ip'
+        allocation_method: dynamic
+        domain_name: '{{ az_resource_group_name }}'
+        #tags: '{{ tagsForVmss }}'
+      loop: '{{ molecule_yml.platforms }}'
+
+    - name: Create load balancer
+      azure_rm_loadbalancer:
+        resource_group: '{{ az_resource_group_name }}'
+        name: '{{ unique_vmss_name[item.name] }}-lb'
+        frontend_ip_configurations:
+        - name: "PublicIPAddress"
+          public_ip_address: '{{ unique_vmss_name[item.name] }}-ip'
+        backend_address_pools:
+        - name: backendaddrpool0
+        probes:
+        - name: prob0
+          port: "{{ azure_images[os_platform]['connection_port'] }}"
+          protocol: TCP
+        load_balancing_rules:
+        - name: lbrbalancingrule0
+          frontend_ip_configuration: "PublicIPAddress"
+          frontend_port: "{{ azure_images[os_platform]['connection_port'] }}"
+          backend_port: "{{ azure_images[os_platform]['connection_port'] }}"
+          protocol: TCP
+          probe: prob0
+        #tags: '{{ tagsForVmss }}'
+      loop: '{{ molecule_yml.platforms }}'
+      register: loadbalancers
+
+    - name: Debug lb
+      debug:
+        var: loadbalancers
+
     - name: Create VM Scale Set
       azure_rm_resource:
         resource_group: '{{ az_resource_group_name }}'
@@ -139,11 +183,7 @@
         idempotency: true
         body:
           location: '{{ item.az_location }}'
-          tags:
-            Name: '{{ item.name }}-{{ ci_branch_name }}'
-            Instance: '{{ item.name }}'
-            OS: '{{ os_platform }}'
-            Managed_by: Molecule
+          tags: '{{ tagsForVmss }}'
           sku:
             name: '{{ item.vm_size }}'
             capacity: 1

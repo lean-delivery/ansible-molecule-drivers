@@ -230,6 +230,7 @@
           tags: '{{ tagsForVmss }}'
           sku:
             name: '{{ item.vm_size }}'
+            tier: "Standard"
             capacity: 1
           properties:
             overprovision: false
@@ -271,7 +272,6 @@
                                   loadBalancers/{{ unique_vmss_name[item.name] }}-lb/\
                                   backendAddressPools/backendaddrpool0"
               extensionProfile: "{{ azure_images[os_platform]['ext_profile'] }}"
-            singlePlacementGroup: true
       loop: '{{ molecule_yml.platforms }}'
       changed_when: false
       register: vmss

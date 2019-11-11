@@ -109,7 +109,7 @@
             /resourceGroups/{{ az_resource_group_name }}/providers/Microsoft.Network/\
             loadBalancers/{{ unique_vmss_name[item.name] }}-lb/\
             backendAddressPools/backendaddrpool0"
-    assign_public_ip: true
+    assign_public_ip: false
 
   tasks:
     - name: debug CI_COMMIT_REF_NAME

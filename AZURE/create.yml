@@ -193,8 +193,8 @@
 
     - name: Check load balancer info
       debug:
-        var: item
-      loop: loadbalancers.results
+        var: "{{ item }}"
+      loop: "{{ loadbalancers.results | list }}"
 
     - name: Wait for load balancer creation to complete
       async_status:

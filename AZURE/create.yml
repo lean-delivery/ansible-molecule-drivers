@@ -26,6 +26,8 @@
     az_resource_group_name: epm-ldi
     az_storage_account_name: "storage11490"
     az_container: "gitlab-ci-tfstate"
+    az_file_name: "azure.go"
+    az_time_expire: "{{ lookup('pipe', 'date -d \"30 minutes\" +\"%Y-%m-%dT%H:%MZ\"') }}"
 
 
     groups_item_var: '{{ item.groups }}'
@@ -115,6 +117,15 @@
     - name: debug CI_COMMIT_REF_NAME
       debug:
         var: ci_branch_name
+
+    - name: Generate SAS key
+      shell: "az storage blob generate-sas --account-name {{ az_storage_account_name }} -c {{ az_container }} \
+              -n {{ az_file_name }} --permissions r --expiry {{ az_time_expire }} --https-only"
+      register: az_sas_token
+
+    - name: Debug variable
+      debug:
+        var: az_sas_token
 
     - name: Generate keypair
       openssh_keypair:

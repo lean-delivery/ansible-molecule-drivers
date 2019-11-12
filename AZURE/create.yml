@@ -27,7 +27,7 @@
     az_storage_account_name: "storage11490"
     az_container: "gitlab-ci-tfstate"
     az_file_name: "azure.go"
-    az_time_expire: "{{ lookup('pipe', 'date -u -d +%Y-%m-%dT%H:%MZ') }}"
+    az_time_expire: "{{ lookup('pipe', 'date -u -d \"30 minutes\" \"+%Y-%m-%dT%H:%MZ\"') }}"
 
 
     groups_item_var: '{{ item.groups }}'

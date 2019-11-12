@@ -118,24 +118,6 @@
       debug:
         var: ci_branch_name
 
-    - name: Generate SAS key
-      azure_rm_resource:
-        resource_group: '{{ az_resource_group_name }}'
-        method: POST
-        provider: Storage
-        resource_type: storageAccounts
-        api_version: "2019-06-01"
-        resource_name: "{{ az_storage_account_name }}/ListAccountSas"
-        body:
-          signedServices: "f"
-          signedResourceTypes: "sco"
-          signedPermission: "rwdlc"
-          signedProtocol: "https"
-          signedStart: "{{ date_now }}"
-          signedExpiry: "{{ date_tomorrow }}"
-          keyToSign: "JvbQmuHocOkTvs2/9uQBUEu+Ks6nkMaVvLfdU8y+VBfZLozz7ncR8BCDYjYrKfzEvdGeq6dsxpp2Qksqn+koxg=="
-        register: access_signature
-
     - name: Debug variable
       debug:
         var: access_signature['response']

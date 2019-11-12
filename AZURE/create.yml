@@ -132,7 +132,11 @@
           signedResource: "b"
           signedPermission: "r"
           signedExpiry: "2019-11-13T11:32:48.8457197Z"
+      register: storage_sig
 
+    - name: Debug var
+      debug:
+        var: storage_sig
 
     - name: Generate keypair
       openssh_keypair:

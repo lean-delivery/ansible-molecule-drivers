@@ -118,9 +118,21 @@
       debug:
         var: ci_branch_name
 
-    - name: Debug variable
-      debug:
-        var: access_signature['response']
+    - name: Generate access signature
+      azure_rm_resource:
+        resource_group: '{{ az_resource_group_name }}'
+        method: POST
+        url: "/subscriptions/{{ lookup('env','AZURE_SUBSCRIPTION_ID') }}\
+              /resourceGroups/{{ az_resource_group_name }}/providers/\
+              Microsoft.Storage/storageAccounts/\
+              {{ az_storage_account_name }}/ListServiceSas/"
+        api_version: "2019-06-01"
+        body:
+          canonicalizedResource: "/blob/{{ az_storage_account_name }}/{{ az_container }}/{{ az_file_name }}"
+          signedResource: "b"
+          signedPermission: "r"
+          signedExpiry: "2019-11-13T11:32:48.8457197Z"
+
 
     - name: Generate keypair
       openssh_keypair:

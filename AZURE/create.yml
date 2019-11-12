@@ -27,8 +27,6 @@
     az_storage_account_name: "storage11490"
     az_container: "gitlab-ci-tfstate"
     az_file_name: "azure.go"
-    az_time_expire: "{{ lookup('pipe', 'date -u +%Y-%m-%dT%H:%MZ') }}"
-
 
     groups_item_var: '{{ item.groups }}'
     os_platform: >-
@@ -112,6 +110,8 @@
             loadBalancers/{{ unique_vmss_name[item.name] }}-lb/\
             backendAddressPools/backendaddrpool0"
     assign_public_ip: false
+    date_now: "{{ lookup('pipe', 'date --iso-8601') }}"
+    date_tomorrow: "{{ lookup('pipe', 'date --iso-8601 -d tomorrow') }}"
 
   tasks:
     - name: debug CI_COMMIT_REF_NAME
@@ -119,13 +119,26 @@
         var: ci_branch_name
 
     - name: Generate SAS key
-      shell: "az storage blob generate-sas --account-name {{ az_storage_account_name }} -c {{ az_container }} \
-              -n {{ az_file_name }} --permissions r --expiry {{ az_time_expire }} --https-only"
-      register: az_sas_token
+      azure_rm_resource:
+        resource_group: '{{ az_resource_group_name }}'
+        method: POST
+        provider: Storage
+        resource_type: storageAccounts
+        api_version: "2019-06-01"
+        resource_name: "{{ az_storage_account_name }}/ListAccountSas"
+        body:
+          signedServices: "f"
+          signedResourceTypes: "sco"
+          signedPermission: "rwdlc"
+          signedProtocol: "https"
+          signedStart: "{{ date_now }}"
+          signedExpiry: "{{ date_tomorrow }}"
+          keyToSign: "JvbQmuHocOkTvs2/9uQBUEu+Ks6nkMaVvLfdU8y+VBfZLozz7ncR8BCDYjYrKfzEvdGeq6dsxpp2Qksqn+koxg=="
+        register: access_signature
 
     - name: Debug variable
       debug:
-        var: az_sas_token
+        var: access_signature['response']
 
     - name: Generate keypair
       openssh_keypair:

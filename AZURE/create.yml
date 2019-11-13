@@ -23,7 +23,9 @@
 
     ssh_port: 22
     winrm_port: 5986
-    az_resource_group_name: epm-ldi # hardcode!!!
+    az_resource_group_name: epm-ldi
+    az_storage_account_name: "storage11490"
+    az_container: "gitlab-ci-tfstate"
 
 
     groups_item_var: '{{ item.groups }}'
@@ -97,20 +99,17 @@
           offer: WindowsServer
           sku: 2019-Datacenter-Core-smalldisk
           version: latest
-    osProfileLinux:
-      computerNamePrefix: myVmss
-      adminUsername: '{{ vm_admin_username }}'
-      adminPassword: '{{ vm_admin_password }}'
-      linuxConfiguration:
-        disablePasswordAuthentication: true
-        ssh:
-          publicKeys:
-          - path: '/home/{{ vm_admin_username }}/.ssh/authorized_keys'
-            keyData: '{{ keypair.public_key }}'
-    osProfileWindows:
-      computerNamePrefix: myVmss
-      adminUsername: '{{ vm_admin_username }}'
-      adminPassword: '{{ vm_admin_password }}'
+    tagsForVmss:
+      Name: '{{ item.name }}-{{ ci_branch_name }}'
+      Instance: '{{ item.name }}'
+      OS: '{{ os_platform }}'
+      Managed_by: Molecule
+    withLoadBalancer:
+      - id: "/subscriptions/{{ lookup('env','AZURE_SUBSCRIPTION_ID') }}\
+            /resourceGroups/{{ az_resource_group_name }}/providers/Microsoft.Network/\
+            loadBalancers/{{ unique_vmss_name[item.name] }}-lb/\
+            backendAddressPools/backendaddrpool0"
+    assign_public_ip: false
 
   tasks:
     - name: debug CI_COMMIT_REF_NAME
@@ -144,6 +143,75 @@
       loop_control:
         label: '{{ item.name }}'
 
+    - name: Create a public ip address
+      azure_rm_publicipaddress:
+        resource_group: '{{ az_resource_group_name }}'
+        name: '{{ unique_vmss_name[item.name] }}-ip'
+        allocation_method: Dynamic
+        domain_name: '{{ unique_vmss_name[item.name] }}'
+        location: '{{ item.az_location }}'
+        tags: '{{ tagsForVmss }}'
+      when: item.assign_public_ip | default(assign_public_ip)
+      loop: '{{ molecule_yml.platforms }}'
+      changed_when: false
+      async: 7200
+      poll: 0
+      register: public_ip
+
+    - name: Wait for public ip creation to complete
+      async_status:
+        jid: '{{ item.ansible_job_id }}'
+      when: not item.skipped | default(false)
+      loop: '{{ public_ip.results }}'
+      loop_control:
+        label: '{{ item.item.name }}'
+      register: public_ip_create
+      until: public_ip_create.finished
+      delay: 20
+      retries: 300
+
+    - name: Create load balancer
+      azure_rm_loadbalancer:
+        resource_group: '{{ az_resource_group_name }}'
+        name: '{{ unique_vmss_name[item.name] }}-lb'
+        location: '{{ item.az_location }}'
+        frontend_ip_configurations:
+        - name: "PublicIPAddress"
+          public_ip_address: '{{ unique_vmss_name[item.name] }}-ip'
+        backend_address_pools:
+        - name: backendaddrpool0
+        probes:
+        - name: prob0
+          port: "{{ azure_images[os_platform]['connection_port'] }}"
+          protocol: Tcp
+        load_balancing_rules:
+        - name: lbrbalancingrule0
+          frontend_ip_configuration: "PublicIPAddress"
+          backend_address_pool: backendaddrpool0
+          frontend_port: "{{ azure_images[os_platform]['connection_port'] }}"
+          backend_port: "{{ azure_images[os_platform]['connection_port'] }}"
+          protocol: Tcp
+          probe: prob0
+        tags: '{{ tagsForVmss }}'
+      when: item.assign_public_ip | default(assign_public_ip)
+      loop: '{{ molecule_yml.platforms }}'
+      changed_when: false
+      async: 7200
+      poll: 0
+      register: loadbalancers
+
+    - name: Wait for load balancer creation to complete
+      async_status:
+        jid: '{{ item.ansible_job_id }}'
+      when: not item.skipped | default(false)
+      loop: '{{ loadbalancers.results }}'
+      loop_control:
+        label: '{{ item.item.name }}'
+      register: loadbalancers_create
+      until: loadbalancers_create.finished
+      delay: 20
+      retries: 300
+
     - name: Create VM Scale Set
       azure_rm_resource:
         resource_group: '{{ az_resource_group_name }}'
@@ -153,13 +221,10 @@
         idempotency: true
         body:
           location: '{{ item.az_location }}'
-          tags:
-            Name: '{{ item.name }}-{{ ci_branch_name }}'
-            Instance: '{{ item.name }}'
-            OS: '{{ os_platform }}'
-            Managed_by: Molecule
+          tags: '{{ tagsForVmss }}'
           sku:
             name: '{{ item.vm_size }}'
+            tier: "Standard"
             capacity: 1
           properties:
             overprovision: false
@@ -195,7 +260,10 @@
                                   resourceGroups/epm-ldi/providers/\
                                   Microsoft.Network/virtualNetworks/epm-ldi-northeurope-vnet/\
                                   subnets/epm-ldi-northeurope-subnet"
+                            loadBalancerBackendAddressPools: >-
+                              {{ (item.assign_public_ip | default(assign_public_ip)) | ternary(withLoadBalancer, omit) }}
               extensionProfile: "{{ azure_images[os_platform]['ext_profile'] }}"
+            singlePlacementGroup: true
       loop: '{{ molecule_yml.platforms }}'
       changed_when: false
       register: vmss
@@ -210,7 +278,7 @@
         label: '{{ item.item.name }}'
       register: vmss_create
       until: vmss_create.finished
-      delay: 5
+      delay: 20
       retries: 300
 
     - name: Get Instance ID

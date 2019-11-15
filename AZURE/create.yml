@@ -138,7 +138,7 @@
         unique_vmss_name: >-
           {{ unique_vmss_name | default({})
             | combine({ item.name: 'tst-' + ((item.name + '-' + ci_branch_name)
-            | to_uuid)[:8] }) }}
+            | to_uuid)[:11] }) }}
       loop: '{{ molecule_yml.platforms }}'
       loop_control:
         label: '{{ item.name }}'

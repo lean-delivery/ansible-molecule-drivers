@@ -24,7 +24,7 @@
         unique_vmss_name: >-
           {{ unique_vmss_name | default({})
             | combine({ item.name: 'tst-' + ((item.name + '-' + ci_branch_name)
-            | to_uuid)[:8] }) }}
+            | to_uuid)[:11] }) }}
       loop: '{{ molecule_yml.platforms }}'
 
     - name: Destroy molecule instance(s)
@@ -55,32 +55,35 @@
 
     - name: Get list of Load balancers
       azure_rm_loadbalancer_facts:
-        resource_group: "{{ az_resource_group_name }}"
-        tags: "{{ vmss_tags[item.name]  }}"
-      loop: "{{ molecule_yml.platforms }}"
+        resource_group: '{{ az_resource_group_name }}'
+        tags: '{{ vmss_tags[item.name]  }}'
+      loop: '{{ molecule_yml.platforms }}'
       register: lb_sets
 
     - name: Destroy Load balancer resources
       azure_rm_loadbalancer:
-        resource_group: "{{ az_resource_group_name }}"
-        location: "{{ az_location }}"
-        name: "{{ item.ansible_facts.azure_loadbalancers[0].name }}"
+        resource_group: '{{ az_resource_group_name }}'
+        location: '{{ az_location }}'
+        name: >-
+          {{ item.values() | map(attribute='azure_loadbalancers')
+            | select('defined') | list | first | map(attribute='name') | list | first }}
         state: absent
       register: lbs
-      loop: "{{ lb_sets.results }}"
+      loop: '{{ lb_sets.results }}'
       loop_control:
-        label: "{{ item.item.name }}"
-      when: item.ansible_facts.azure_loadbalancers | length > 0
+        label: '{{ item.item.name }}'
+      when: (item.values() | map(attribute='azure_loadbalancers')
+              | select('defined') | list | first | length)
       async: 7200
       poll: 0
 
     - name: Wait for LBs deletion to complete
       async_status:
-        jid: "{{ item.ansible_job_id }}"
+        jid: '{{ item.ansible_job_id }}'
       when: item.ansible_job_id is defined
-      loop: "{{ lbs.results }}"
+      loop: '{{ lbs.results }}'
       loop_control:
-        label: "{{ item.item.item.name }}"
+        label: '{{ item.item.item.name }}'
       register: lbs_delete
       until: lbs_delete.finished
       delay: 10
@@ -88,32 +91,35 @@
 
     - name: Get list of IPs
       azure_rm_publicipaddress_facts:
-        resource_group: "{{ az_resource_group_name }}"
-        tags: "{{ vmss_tags[item.name]  }}"
-      loop: "{{ molecule_yml.platforms }}"
+        resource_group: '{{ az_resource_group_name }}'
+        tags: '{{ vmss_tags[item.name]  }}'
+      loop: '{{ molecule_yml.platforms }}'
       register: ip_sets
 
     - name: Destroy Public IP address resources
       azure_rm_publicipaddress:
-        resource_group: "{{ az_resource_group_name }}"
-        location: "{{ az_location }}"
-        name: "{{ item.ansible_facts.azure_publicipaddresses[0].name }}"
+        resource_group: '{{ az_resource_group_name }}'
+        location: '{{ az_location }}'
+        name: >-
+          {{ item.values() | map(attribute='azure_publicipaddresses')
+              | select('defined') | list | first | map(attribute='name') | list | first }}
         state: absent
       register: ips
-      loop: "{{ ip_sets.results }}"
+      loop: '{{ ip_sets.results }}'
       loop_control:
-        label: "{{ item.item.name }}"
-      when: item.ansible_facts.azure_publicipaddresses | length > 0
+        label: '{{ item.item.name }}'
+      when: (item.values() | map(attribute='azure_publicipaddresses')
+              | select('defined') | list | first | length)
       async: 7200
       poll: 0
 
     - name: Wait for Public IP address resource deletion to complete
       async_status:
-        jid: "{{ item.ansible_job_id }}"
+        jid: '{{ item.ansible_job_id }}'
       when: item.ansible_job_id is defined
-      loop: "{{ ips.results }}"
+      loop: '{{ ips.results }}'
       loop_control:
-        label: "{{ item.item.item.name }}"
+        label: '{{ item.item.item.name }}'
       register: ip_delete
       until: ip_delete.finished
       delay: 10

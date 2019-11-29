@@ -27,6 +27,8 @@
         debian9: debian-stretch-hvm-x86_64*
         amazon: amzn-ami-hvm-*
         amazon2: amzn2-ami-hvm-*
+        rhel7: RHEL-7.7_HVM-*
+        rhel8: RHEL-8.0.0_HVM-*
       windows:
         windows2016: Windows_Server-2016-English-Full-Base-*
         windows2016core: Windows_Server-2016-English-Core-Base-*

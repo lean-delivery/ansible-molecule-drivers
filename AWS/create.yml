@@ -45,6 +45,7 @@
       ec2_ami_facts:
         filters:
           name: '{{ (aws_platforms.linux | combine(aws_platforms.windows))[item.platform] }}'
+          architecture: x86_64
       register: amis
       when: item.platform in aws_platforms.linux | combine(aws_platforms.windows)
       loop: '{{ molecule_yml.platforms | selectattr("platform", "defined") | list }}'

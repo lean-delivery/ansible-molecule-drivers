@@ -19,21 +19,43 @@
 
     aws_platforms:
       linux:
-        centos8: CentOS Stream Minimal Latest with Updates*
-        centos7: CentOS Linux 7 x86_64 HVM EBS ENA*
-        centos6: CentOS Linux 6 x86_64 HVM EBS ENA*
-        ubuntu16: ubuntu/images/hvm-ssd/ubuntu-xenial-16.04-amd64-server*
-        ubuntu18: ubuntu/images/hvm-ssd/ubuntu-bionic-18.04-amd64-server*
-        debian9: debian-stretch-hvm-x86_64*
-        amazon: amzn-ami-hvm-*
-        amazon2: amzn2-ami-hvm-*
-        rhel7: RHEL-7.7_HVM-*
-        rhel8: RHEL-8.0.0_HVM-*
+        centos8:
+          description: Cent OS Stream (CentOS Linux Stream)*
+        centos7:
+          description: CentOS Linux 7 x86_64 HVM EBS ENA 1901_01
+        centos6:
+          description: CentOS Linux 6 x86_64 HVM EBS ENA 1901_01
+        ubuntu16:
+          description: Canonical, Ubuntu, 16.04 LTS, amd64 xenial image*
+          owner-id: '099720109477'
+        ubuntu18:
+          description: Canonical, Ubuntu, 18.04 LTS, amd64 bionic image*
+          owner-id: '099720109477'
+        debian9:
+          name: debian-stretch-hvm-x86_64*
+          owner-id: '379101102735'
+        debian10:
+          name: debian-10-amd64-*
+          owner-id: '136693071363'
+        amazon:
+          description: Amazon Linux AMI*
+          owner-id: '137112412989'
+        amazon2:
+          description: Amazon Linux 2 AMI*
+          owner-id: '137112412989'
+        rhel7:
+          name: RHEL-7.7_HVM-*
+        rhel8:
+          name: RHEL-8.0.0_HVM-*
       windows:
-        windows2016: Windows_Server-2016-English-Full-Base-*
-        windows2016core: Windows_Server-2016-English-Core-Base-*
-        windows2019: Windows_Server-2019-English-Full-Base-*
-        windows2019core: Windows_Server-2019-English-Core-Base-*
+        windows2016:
+          name: Windows_Server-2016-English-Full-Base-*
+        windows2016core:
+          name: Windows_Server-2016-English-Core-Base-*
+        windows2019:
+          name: Windows_Server-2019-English-Full-Base-*
+        windows2019core:
+          name: Windows_Server-2019-English-Core-Base-*
 
   tasks:
 
@@ -43,9 +65,10 @@
 
     - name: Find latest AMI for server
       ec2_ami_facts:
-        filters:
-          name: '{{ (aws_platforms.linux | combine(aws_platforms.windows))[item.platform] }}'
-          architecture: x86_64
+        filters: >-
+          {{ (aws_platforms.linux
+            | combine(aws_platforms.windows))[item.platform]
+            | combine({'architecture': 'x86_64', 'root-device-type': 'ebs', 'virtualization-type': 'hvm'}) }}
       register: amis
       when: item.platform in aws_platforms.linux | combine(aws_platforms.windows)
       loop: '{{ molecule_yml.platforms | selectattr("platform", "defined") | list }}'

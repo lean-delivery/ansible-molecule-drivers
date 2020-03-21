@@ -3,18 +3,24 @@
   hosts: localhost
   connection: local
   gather_facts: true
-  no_log: "{{ not ((lookup('env', 'MOLECULE_DEBUG') | bool) or (molecule_yml.provisioner.log | default(false) | bool)) }}"
+  no_log: >-
+    {{ not ((lookup('env', 'MOLECULE_DEBUG') | bool) or (molecule_yml.provisioner.log | default(false) | bool)) }}
   vars:
     ssh_port: 22
-    ci_branch_name: "{{ lookup('env', 'CI_COMMIT_REF_NAME' ) }}"
+    ci_branch_name: >-
+      {{ lookup('env', 'CI_COMMIT_REF_NAME' ) }}
     keypair_name: "molecule-key_\
       {{ lookup('env','MOLECULE_PROJECT_DIRECTORY').split('/')[-1] }}_\
       {{ lookup('env','MOLECULE_SCENARIO_NAME') }}-{{ lookup('env', 'CI_COMMIT_REF_NAME' ) }}"
-    keypair_path: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/ssh_key"
+    keypair_path: >-
+      {{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/ssh_key
 
-    ansible_user: "{{ lookup('env', 'WINRM_ADMIN_ACC') | default('molecule', true) }}"
-    ansible_password: "{{ lookup('env', 'WINRM_ADMIN_PWD') | default('M0leCule123!', true) }}"
-    ec2_user_data: "{{ lookup('template', './windows') }}"
+    ansible_user: >-
+      {{ lookup('env', 'WINRM_ADMIN_ACC') | default('molecule', true) }}
+    ansible_password: >-
+      {{ lookup('env', 'WINRM_ADMIN_PWD') | default('M0leCule123!', true) }}
+    ec2_user_data: >-
+      {{ lookup('template', './windows') }}
     winrm_port: 5986
 
     aws_platforms:
@@ -71,7 +77,8 @@
             | combine({'architecture': 'x86_64', 'root-device-type': 'ebs', 'virtualization-type': 'hvm'}) }}
       register: amis
       when: item.platform in aws_platforms.linux | combine(aws_platforms.windows)
-      loop: '{{ molecule_yml.platforms | selectattr("platform", "defined") | list }}'
+      loop: >-
+        {{ molecule_yml.platforms | selectattr('platform', 'defined') | list }}
 
     - name: Set latest AMIs for platforms
       set_fact:
@@ -80,16 +87,17 @@
             | combine( {molecule_platform.name:
               (
                 amis.results
-                  | selectattr("item.platform", "equalto", molecule_platform.platform)
-                  | sum(attribute="images", start=[])
-                  | sort(attribute="creation_date")
-                  | map(attribute="image_id")
+                  | selectattr('item.platform', 'equalto', molecule_platform.platform)
+                  | sum(attribute='images', start=[])
+                  | sort(attribute='creation_date')
+                  | map(attribute='image_id')
                   | list
                   | last
               )
                     } )
           }}
-      loop: '{{ molecule_yml.platforms | selectattr("platform", "defined") | list }}'
+      loop: >-
+        {{ molecule_yml.platforms | selectattr('platform', 'defined') | list }}
       loop_control:
         loop_var: molecule_platform
 
@@ -98,6 +106,42 @@
         ami_images: >-
           {{ ami_images | default({})
             | combine( { item.name: ((last_ami|default({}))[item.name] | default(item.image)) } ) }}
+        ami_root_device: >-
+          {{ ami_root_device | default({})
+            | combine( {item.name:
+              (
+                amis.results
+                  | sum(attribute='images', start=[])
+                  | selectattr('image_id', 'equalto', ((last_ami|default({}))[item.name] | default(item.image)))
+                  | map(attribute='root_device_name')
+                  | list
+                  | last
+              )
+                    } )
+          }}
+        ami_volumes: >-
+          {{ ami_volumes | default({})
+            | combine( {item.name:
+              (
+                amis.results
+                  | sum(attribute='images', start=[])
+                  | selectattr('image_id', 'equalto', ((last_ami|default({}))[item.name] | default(item.image)))
+                  | map(attribute='block_device_mappings')
+                  | list
+                  | last
+              )
+                    } )
+          }}
+      loop: '{{ molecule_yml.platforms }}'
+
+    - name: Set volume dict
+      set_fact:
+        ami_volume: >-
+          {{ ami_volume | default({})
+            | combine( { item.name: ( ami_volumes[item.name]
+                  | selectattr('device_name', 'equalto', ami_root_device[item.name])
+                  | list | first ) } )
+             }}
       loop: '{{ molecule_yml.platforms }}'
 
     - name: Create keypair
@@ -124,16 +168,26 @@
         instance_tags:
           instance: '{{ item.name }}'
           Name: '{{ item.name }}-{{ ci_branch_name }}'
-          CreatedTime: '{{ lookup("pipe","date +%Y-%m-%d") }}'
+          CreatedTime: >-
+            {{ lookup('pipe','date +%Y-%m-%d') }}
           ManagedBy: 'Molecule'
           ssh_user: '{{ item.ssh_user | default(omit) }}'
         spot_price: '{{ item.spot_price | default(omit) }}'
         spot_wait_timeout: '{{ item.wait_timeout | default(600) }}'
-        instance_initiated_shutdown_behavior: '{{ item.shutdown_behavior | default("terminate") }}'
+        instance_initiated_shutdown_behavior: >-
+          {{ item.shutdown_behavior | default('terminate') }}
         user_data: >-
             {{ ((item.platform | default(omit) in aws_platforms.windows) or
                 ('windows' in item.groups))
                 | ternary(ec2_user_data, omit) }}
+        volumes:
+          - device_name: >-
+              {{ ami_volume[item.name]['device_name'] }}
+            volume_type: >-
+              {{ ami_volume[item.name]['ebs']['volume_type'] }}
+            volume_size: >-
+              {{ item.volume_size | default(ami_volume[item.name]['ebs']['volume_size']) }}
+            delete_on_termination: true
         wait: true
         wait_timeout: '{{ item.wait_timeout | default(600) }}'
         assign_public_ip: '{{ item.assign_public_ip | default(true) }}'
@@ -183,7 +237,8 @@
         instance_conf_dict:
           instance: '{{ item.instances[0].tags.instance }}'
           address: '{{ item.instances[0].private_ip }}'
-          public_ip: '{{ item.instances[0].public_ip | default("") }}'
+          public_ip: >-
+            {{ item.instances[0].public_ip | default('') }}
           user: '{{ item.instances[0].tags.ssh_user | default(ansible_user) }}'
           port: >-
             {{ ((item.item.item.platform | default(omit) in aws_platforms.windows) or
@@ -219,4 +274,5 @@
         delay: 2
         connect_timeout: 2
         timeout: 320
-      loop: "{{ lookup('file', molecule_instance_config) | molecule_from_yaml }}"
+      loop: >-
+        {{ lookup('file', molecule_instance_config) | molecule_from_yaml }}

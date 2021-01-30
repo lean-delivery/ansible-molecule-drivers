@@ -27,7 +27,7 @@ AWS role cookiecutter:
   tags:
     - aws
 
-AZURE role cookiecutter:
+.AZURE role cookiecutter:
   stage: deployment test
   script:
     - cookiecutter -f --no-input https://github.com/lean-delivery/ansible-development-kit

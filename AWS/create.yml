@@ -70,7 +70,7 @@
         var: ci_branch_name
 
     - name: Find latest AMI for server
-      ec2_ami_facts:
+      ec2_ami_info:
         filters: >-
           {{ (aws_platforms.linux
             | combine(aws_platforms.windows))[item.platform]
@@ -263,7 +263,7 @@
 
     - name: Dump instance config
       copy:
-        content: '{{ instance_conf | to_json | from_json | molecule_to_yaml | molecule_header }}'
+        content: '{{ instance_conf | to_json | from_json | to_yaml }}'
         dest: '{{ molecule_instance_config }}'
       when: instance_create.changed | bool
 
@@ -275,4 +275,4 @@
         connect_timeout: 2
         timeout: 320
       loop: >-
-        {{ lookup('file', molecule_instance_config) | molecule_from_yaml }}
+        {{ lookup('file', molecule_instance_config) | from_yaml }}

@@ -17,7 +17,7 @@
         state: absent
 
     - name: Get instances list
-      ec2_instance_facts:
+      ec2_instance_info:
         filters:
           "tag:Name": "{{ molecule_yml.platforms | map(attribute='name') | list | product([ci_branch_name]) | map('join', '-') | list }}"
         region: us-east-1
@@ -47,6 +47,6 @@
 
     - name: Dump instance config
       copy:
-        content: '{{ instance_conf | to_json | from_json | molecule_to_yaml | molecule_header }}'
+        content: '{{ instance_conf | to_json | from_json | to_yaml }}'
         dest: '{{ molecule_instance_config }}'
       when: server.changed | bool

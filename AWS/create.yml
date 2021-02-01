@@ -70,7 +70,7 @@
         var: ci_branch_name
 
     - name: Find latest AMI for server
-      ec2_ami_facts:
+      ec2_ami_info:
         filters: >-
           {{ (aws_platforms.linux
             | combine(aws_platforms.windows))[item.platform]

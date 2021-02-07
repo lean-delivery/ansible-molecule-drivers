@@ -26,9 +26,11 @@
     aws_platforms:
       linux:
         centos8:
-          description: Cent OS Stream (CentOS Linux Stream)*
+          description: CentOS 8.3.2011 x86_64
+          owner-id: '125523088429'
         centos7:
-          description: CentOS Linux 7 x86_64 HVM EBS ENA 1901_01
+          description: CentOS 7.9.2009 x86_64
+          owner-id: '125523088429'
         centos6:
           description: CentOS Linux 6 x86_64 HVM EBS ENA 1901_01
         ubuntu16:
